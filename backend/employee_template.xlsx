@@ -1,0 +1,17 @@
+This is a placeholder for the Excel template file.
+The actual Excel template should be created with the following columns:
+- emp_id: Employee ID (e.g., EMP001)
+- name: Employee Name (e.g., John Doe)
+- department: Department (e.g., IT, HR, Operations)
+- preferred_shift: Preferred Shift (e.g., Morning, Afternoon, Evening, Night)
+- max_hours: Maximum Hours per Week (e.g., 40)
+- skills: Skills (comma-separated, e.g., Python,SQL,Communication)
+- weekly_off: Weekly Off Day (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)
+
+Sample data:
+emp_id,name,department,preferred_shift,max_hours,skills,weekly_off
+EMP001,John Doe,IT,Morning,40,"Python,SQL,React",Sunday
+EMP002,Jane Smith,HR,Afternoon,40,"Communication,Leadership",Saturday
+EMP003,Mike Johnson,Operations,Evening,45,"Logistics,Management",Friday
+EMP004,Sarah Wilson,IT,Night,40,"Python,AI,ML",Monday
+EMP005,Tom Brown,HR,Morning,40,"HR,Policies,Recruitment",Tuesday
