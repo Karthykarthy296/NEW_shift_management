@@ -27,7 +27,14 @@ import {
   ArrowRight,
   Filter,
   MoreVertical,
-  RefreshCw
+  RefreshCw,
+  BarChart3,
+  PieChart,
+  FileText,
+  TrendingUp,
+  History,
+  CalendarRange,
+  ChevronDown
 } from 'lucide-react';
 
 export const SearchContext = createContext({
@@ -50,6 +57,8 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const searchContext = useContext(SearchContext);
   const searchQuery = searchContext?.searchQuery ?? '';
   const setSearchQuery = searchContext?.setSearchQuery ?? (() => {});
@@ -66,6 +75,18 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const reportItems = [
+    { label: 'Attendance Report', path: `/${roleSlug}/reports/attendance`, icon: <Clock size={18} />, roles: ['admin', 'manager', 'supervisor'] },
+    { label: 'Shift Distribution', path: `/${roleSlug}/reports/shift-distribution`, icon: <PieChart size={18} />, roles: ['admin', 'manager', 'supervisor'] },
+    { label: 'Leave Report', path: `/${roleSlug}/reports/leave`, icon: <CalendarRange size={18} />, roles: ['admin', 'manager'] },
+    { label: 'Overtime Report', path: `/${roleSlug}/reports/overtime`, icon: <TrendingUp size={18} />, roles: ['admin', 'manager'] },
+    { label: 'AI Optimization', path: `/${roleSlug}/reports/ai-optimization`, icon: <Zap size={18} />, roles: ['admin', 'manager'] },
+    { label: 'Department Coverage', path: `/${roleSlug}/reports/department-coverage`, icon: <BarChart3 size={18} />, roles: ['admin', 'manager'] },
+    { label: 'Replacement History', path: `/${roleSlug}/reports/replacement-history`, icon: <History size={18} />, roles: ['admin', 'manager'] },
+    { label: 'Weekly Analytics', path: `/${roleSlug}/reports/weekly-analytics`, icon: <TrendingUp size={18} />, roles: ['admin', 'manager', 'supervisor'] },
+    { label: 'Monthly Analytics', path: `/${roleSlug}/reports/monthly-analytics`, icon: <BarChart3 size={18} />, roles: ['admin', 'manager'] },
+  ].filter(item => item.roles.includes(userRole));
+
   const menuItems = [
     { icon: <LayoutDashboard size={20} />, label: 'Dashboard', path: `/${roleSlug}/dashboard`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <Users size={20} />, label: 'Employees', path: `/${roleSlug}/employees`, roles: ['admin', 'manager'] },
@@ -73,6 +94,12 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
     { icon: <ClipboardList size={20} />, label: 'Leaves', path: `/${roleSlug}/leaves`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <RefreshCw size={20} />, label: 'Weekly Off Swap', path: `/${roleSlug}/weekly-off-swap`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <Upload size={20} />, label: 'Upload', path: `/${roleSlug}/upload`, roles: ['admin', 'manager'] },
+    { 
+      icon: <BarChart3 size={20} />, 
+      label: 'Reports', 
+      isSubmenu: true, 
+      roles: ['admin', 'manager', 'supervisor'] 
+    },
     { icon: <Shield size={20} />, label: 'Access Control', path: `/${roleSlug}/users`, roles: ['admin'] },
     { icon: <Settings size={20} />, label: 'Settings', path: `/${roleSlug}/settings`, roles: ['admin', 'manager', 'supervisor'] },
   ].filter(item => item.roles.includes(userRole));
@@ -84,15 +111,31 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex">
-      {/* Sidebar Desktop */}
+      {/* Mobile Backdrop */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setMobileMenuOpen(false)}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[45] lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Sidebar Desktop & Mobile */}
       <motion.aside 
         initial={false}
-        animate={{ width: sidebarOpen ? 280 : 88 }}
-        className="hidden lg:flex flex-col fixed left-0 top-0 h-screen bg-[#0f172a] text-white z-50 border-r border-white/5 overflow-hidden shadow-2xl"
+        animate={{ 
+          width: sidebarOpen ? 280 : 88,
+          x: mobileMenuOpen ? 0 : (window.innerWidth < 1024 ? -280 : 0)
+        }}
+        className={`fixed lg:flex flex-col left-0 top-0 h-screen bg-[#0f172a] text-white z-50 border-r border-white/5 overflow-hidden shadow-2xl transition-all duration-300 ${mobileMenuOpen ? 'flex w-[280px]' : 'hidden lg:flex'}`}
       >
         <div className="p-6 mb-4 flex items-center justify-between">
           <AnimatePresence mode='wait'>
-            {sidebarOpen ? (
+            {(sidebarOpen || mobileMenuOpen) ? (
               <motion.div 
                 key="logo-full"
                 initial={{ opacity: 0, x: -10 }}
@@ -121,6 +164,79 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
 
         <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto custom-scrollbar">
           {menuItems.map((item) => {
+            if (item.isSubmenu) {
+              return (
+                <div key={item.label} className="space-y-1">
+                  <button
+                    onClick={() => setReportsOpen(!reportsOpen)}
+                    className={`w-full flex items-center justify-between p-3.5 rounded-xl transition-all duration-300 group ${
+                      reportsOpen ? 'bg-white/5 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className={`transition-colors ${reportsOpen ? 'text-indigo-400' : 'group-hover:text-white'}`}>
+                        {item.icon}
+                      </span>
+                      {sidebarOpen && (
+                        <motion.span 
+                          initial={{ opacity: 0, x: -5 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="font-bold text-[15px]"
+                        >
+                          {item.label}
+                        </motion.span>
+                      )}
+                    </div>
+                    {sidebarOpen && (
+                      <motion.div
+                        animate={{ rotate: reportsOpen ? 180 : 0 }}
+                        className="text-slate-500"
+                      >
+                        <ChevronDown size={16} />
+                      </motion.div>
+                    )}
+                  </button>
+
+                  <AnimatePresence>
+                    {reportsOpen && sidebarOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden pl-4 space-y-1"
+                      >
+                        {reportItems.map((subItem) => {
+                          const isSubActive = location.pathname === subItem.path;
+                          return (
+                            <NavLink
+                              key={subItem.path}
+                              to={subItem.path}
+                              className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all duration-300 group ${
+                                isSubActive 
+                                  ? 'bg-indigo-500/10 text-indigo-400' 
+                                  : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                              }`}
+                            >
+                              <span className={isSubActive ? 'text-indigo-400' : 'group-hover:text-white'}>
+                                {subItem.icon}
+                              </span>
+                              <span className="text-[13px] font-bold">{subItem.label}</span>
+                              {isSubActive && (
+                                <motion.div 
+                                  layoutId="active-sub-indicator"
+                                  className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]"
+                                />
+                              )}
+                            </NavLink>
+                          );
+                        })}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            }
+
             const isActive = location.pathname.includes(item.path);
             return (
               <motion.div
@@ -189,7 +305,13 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
             isScrolled ? 'bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm' : 'bg-transparent'
           }`}
         >
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 lg:gap-6">
+            <button 
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
             <div className="flex flex-col">
               <h1 className="text-xl lg:text-2xl font-black text-slate-900 tracking-tight leading-none">{title}</h1>
               <div className="flex items-center gap-2 mt-1.5">
