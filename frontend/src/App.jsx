@@ -9,6 +9,17 @@ import Settings from './pages/Settings';
 import Upload from './pages/Upload';
 import Users from './pages/Users';
 import WeeklyOffSwap from './pages/WeeklyOffSwap';
+import { 
+  AttendanceReport, 
+  ShiftDistributionReport, 
+  LeaveReport, 
+  OvertimeReport, 
+  AIOptimizationReport, 
+  DepartmentCoverageReport, 
+  ReplacementHistoryReport, 
+  WeeklyAnalytics, 
+  MonthlyAnalytics 
+} from './pages/Reports/Reports';
 import { SearchProvider, SearchContext } from './components/DashboardLayout';
 
 const ErrorFallback = ({ error, resetError }) => (
@@ -135,6 +146,17 @@ function App() {
             <Route path="/admin/users" element={<PrivateRoute roleRequired="admin"><Users /></PrivateRoute>} />
             <Route path="/admin/settings" element={<PrivateRoute roleRequired="admin"><Settings /></PrivateRoute>} />
             
+            {/* Admin Reports */}
+            <Route path="/admin/reports/attendance" element={<PrivateRoute roleRequired="admin"><AttendanceReport /></PrivateRoute>} />
+            <Route path="/admin/reports/shift-distribution" element={<PrivateRoute roleRequired="admin"><ShiftDistributionReport /></PrivateRoute>} />
+            <Route path="/admin/reports/leave" element={<PrivateRoute roleRequired="admin"><LeaveReport /></PrivateRoute>} />
+            <Route path="/admin/reports/overtime" element={<PrivateRoute roleRequired="admin"><OvertimeReport /></PrivateRoute>} />
+            <Route path="/admin/reports/ai-optimization" element={<PrivateRoute roleRequired="admin"><AIOptimizationReport /></PrivateRoute>} />
+            <Route path="/admin/reports/department-coverage" element={<PrivateRoute roleRequired="admin"><DepartmentCoverageReport /></PrivateRoute>} />
+            <Route path="/admin/reports/replacement-history" element={<PrivateRoute roleRequired="admin"><ReplacementHistoryReport /></PrivateRoute>} />
+            <Route path="/admin/reports/weekly-analytics" element={<PrivateRoute roleRequired="admin"><WeeklyAnalytics /></PrivateRoute>} />
+            <Route path="/admin/reports/monthly-analytics" element={<PrivateRoute roleRequired="admin"><MonthlyAnalytics /></PrivateRoute>} />
+            
             {/* Manager Routes */}
             <Route path="/manager/dashboard" element={<PrivateRoute roleRequired="manager"><MainDashboard /></PrivateRoute>} />
             <Route path="/manager/shifts" element={<PrivateRoute roleRequired="manager"><Shifts /></PrivateRoute>} />
@@ -144,12 +166,28 @@ function App() {
             <Route path="/manager/upload" element={<PrivateRoute roleRequired="manager"><Upload /></PrivateRoute>} />
             <Route path="/manager/settings" element={<PrivateRoute roleRequired="manager"><Settings /></PrivateRoute>} />
 
+            {/* Manager Reports */}
+            <Route path="/manager/reports/attendance" element={<PrivateRoute roleRequired="manager"><AttendanceReport /></PrivateRoute>} />
+            <Route path="/manager/reports/shift-distribution" element={<PrivateRoute roleRequired="manager"><ShiftDistributionReport /></PrivateRoute>} />
+            <Route path="/manager/reports/leave" element={<PrivateRoute roleRequired="manager"><LeaveReport /></PrivateRoute>} />
+            <Route path="/manager/reports/overtime" element={<PrivateRoute roleRequired="manager"><OvertimeReport /></PrivateRoute>} />
+            <Route path="/manager/reports/ai-optimization" element={<PrivateRoute roleRequired="manager"><AIOptimizationReport /></PrivateRoute>} />
+            <Route path="/manager/reports/department-coverage" element={<PrivateRoute roleRequired="manager"><DepartmentCoverageReport /></PrivateRoute>} />
+            <Route path="/manager/reports/replacement-history" element={<PrivateRoute roleRequired="manager"><ReplacementHistoryReport /></PrivateRoute>} />
+            <Route path="/manager/reports/weekly-analytics" element={<PrivateRoute roleRequired="manager"><WeeklyAnalytics /></PrivateRoute>} />
+            <Route path="/manager/reports/monthly-analytics" element={<PrivateRoute roleRequired="manager"><MonthlyAnalytics /></PrivateRoute>} />
+
             {/* Supervisor Routes */}
             <Route path="/supervisor/dashboard" element={<PrivateRoute roleRequired="supervisor"><MainDashboard /></PrivateRoute>} />
             <Route path="/supervisor/shifts" element={<PrivateRoute roleRequired="supervisor"><Shifts /></PrivateRoute>} />
             <Route path="/supervisor/leaves" element={<PrivateRoute roleRequired="supervisor"><Leaves /></PrivateRoute>} />
             <Route path="/supervisor/weekly-off-swap" element={<PrivateRoute roleRequired="supervisor"><WeeklyOffSwap /></PrivateRoute>} />
             <Route path="/supervisor/settings" element={<PrivateRoute roleRequired="supervisor"><Settings /></PrivateRoute>} />
+
+            {/* Supervisor Reports (Limited) */}
+            <Route path="/supervisor/reports/attendance" element={<PrivateRoute roleRequired="supervisor"><AttendanceReport /></PrivateRoute>} />
+            <Route path="/supervisor/reports/shift-distribution" element={<PrivateRoute roleRequired="supervisor"><ShiftDistributionReport /></PrivateRoute>} />
+            <Route path="/supervisor/reports/weekly-analytics" element={<PrivateRoute roleRequired="supervisor"><WeeklyAnalytics /></PrivateRoute>} />
 
             <Route path="*" element={<Navigate to="/login" />} />
           </Routes>

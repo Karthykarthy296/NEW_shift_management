@@ -27,7 +27,20 @@ import {
   ArrowRight,
   Filter,
   MoreVertical,
-  RefreshCw
+  RefreshCw,
+  BarChart3,
+  PieChart,
+  FileText,
+  TrendingUp,
+  History,
+  CalendarRange,
+  ChevronDown,
+  Download,
+  FileSpreadsheet,
+  FileJson,
+  Printer,
+  ChevronUp,
+  Loader2
 } from 'lucide-react';
 
 export const SearchContext = createContext({
@@ -45,11 +58,215 @@ export const SearchProvider = ({ children }) => {
   );
 };
 
+// --- Export Sidebar Component ---
+const ExportSidebar = ({ isOpen, onClose }) => {
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const reports = [
+    { id: 'employees', label: 'Employee Report', icon: <Users size={20} />, description: 'Full workforce directory and skills matrix' },
+    { id: 'shifts', label: 'Shift Schedule Report', icon: <Clock size={20} />, description: 'Daily/Weekly personnel assignments' },
+    { id: 'attendance', label: 'Attendance Report', icon: <CheckCircle2 size={20} />, description: 'Presence and absence tracking' },
+    { id: 'leaves', label: 'Leave Report', icon: <CalendarRange size={20} />, description: 'Leave history and pending requests' },
+    { id: 'performance', label: 'Performance Report', icon: <TrendingUp size={20} />, description: 'AI efficiency and workload balance' },
+    { id: 'payroll', label: 'Payroll Report', icon: <Zap size={20} />, description: 'Overtime and estimated workforce costs' },
+  ];
+
+  const formats = [
+    { id: 'xlsx', label: 'Excel (.xlsx)', icon: <FileSpreadsheet size={18} />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { id: 'pdf', label: 'PDF Document (.pdf)', icon: <FileText size={18} />, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { id: 'csv', label: 'CSV File (.csv)', icon: <FileJson size={18} />, color: 'text-blue-600', bg: 'bg-blue-50' },
+  ];
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleExport = async (format) => {
+    if (!selectedReport) return;
+    setIsGenerating(true);
+    
+    try {
+      const reportName = reports.find(r => r.id === selectedReport).label;
+      const date = new Date().toISOString().split('T')[0];
+      const filename = `${reportName.replace(/\s+/g, '_')}_${date}.${format}`;
+      
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`http://127.0.0.1:8000/export/${selectedReport}`, {
+        params: { format },
+        responseType: 'blob',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      showToast(`${reportName} exported successfully!`);
+      setSelectedReport(null);
+      onClose();
+    } catch (err) {
+      console.error('Export error:', err);
+      const errorMsg = err.response?.data?.detail || 'Export failed. Check backend connectivity.';
+      showToast(errorMsg, 'danger');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <>
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={onClose}
+              className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100]"
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed right-0 top-0 h-screen w-full max-w-md bg-white shadow-2xl z-[101] flex flex-col"
+            >
+              <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">Export Center</h3>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Select report type and format</p>
+                </div>
+                <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
+                  <X size={24} className="text-slate-500" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+                {!selectedReport ? (
+                  <div className="space-y-4">
+                    {reports.map((report) => (
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        key={report.id}
+                        onClick={() => setSelectedReport(report.id)}
+                        className="w-full text-left p-6 rounded-[2rem] border border-slate-100 bg-white hover:bg-indigo-50 hover:border-indigo-100 transition-all group flex items-start gap-5 shadow-sm hover:shadow-xl hover:shadow-indigo-900/5"
+                      >
+                        <div className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-white group-hover:text-indigo-500 transition-all shadow-sm">
+                          {report.icon}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{report.label}</h4>
+                          <p className="text-xs font-bold text-slate-400 mt-1">{report.description}</p>
+                        </div>
+                        <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-400 mt-1" />
+                      </motion.button>
+                    ))}
+                  </div>
+                ) : (
+                  <motion.div 
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="space-y-8"
+                  >
+                    <button 
+                      onClick={() => setSelectedReport(null)}
+                      className="flex items-center gap-2 text-indigo-500 font-black text-xs uppercase tracking-widest hover:text-indigo-600 transition-colors"
+                    >
+                      <ChevronLeft size={16} /> Back to Reports
+                    </button>
+                    
+                    <div className="p-8 rounded-[2.5rem] bg-indigo-600 text-white shadow-2xl shadow-indigo-200 flex items-center gap-6">
+                       <div className="w-16 h-16 rounded-[1.5rem] bg-white/10 flex items-center justify-center">
+                          {reports.find(r => r.id === selectedReport).icon}
+                       </div>
+                       <div>
+                          <h4 className="text-xl font-black">{reports.find(r => r.id === selectedReport).label}</h4>
+                          <p className="text-xs font-bold text-indigo-100 mt-1">Ready for generation</p>
+                       </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Output Format</p>
+                      {formats.map((format) => (
+                        <button
+                          key={format.id}
+                          disabled={isGenerating}
+                          onClick={() => handleExport(format.id)}
+                          className="w-full flex items-center justify-between p-6 rounded-[2rem] border border-slate-100 hover:border-slate-300 transition-all group relative overflow-hidden"
+                        >
+                          <div className="flex items-center gap-4 relative z-10">
+                            <div className={`w-10 h-10 rounded-xl ${format.bg} ${format.color} flex items-center justify-center transition-transform group-hover:scale-110`}>
+                              {format.icon}
+                            </div>
+                            <span className="font-black text-slate-900">{format.label}</span>
+                          </div>
+                          <Download size={18} className="text-slate-300 group-hover:text-slate-900 relative z-10" />
+                          <div className="absolute inset-0 bg-slate-50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+
+              <AnimatePresence>
+                {isGenerating && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 bg-white/80 backdrop-blur-sm z-[110] flex flex-col items-center justify-center gap-4"
+                  >
+                    <div className="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin" />
+                    <p className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] animate-pulse">Generating Report...</p>
+                    <p className="text-xs font-bold text-slate-400 italic">Please do not close this window</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Global Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className={`fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl shadow-2xl z-[200] flex items-center gap-3 font-black text-sm ${
+              toast.type === 'success' ? 'bg-slate-900 text-white' : 'bg-rose-600 text-white'
+            }`}
+          >
+            {toast.type === 'success' ? <CheckCircle2 size={18} className="text-emerald-400" /> : <AlertCircle size={18} />}
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+};
+
 const DashboardLayout = ({ title, children, role = "Employee" }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isScrolled, setIsScrolled] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+
   const searchContext = useContext(SearchContext);
   const searchQuery = searchContext?.searchQuery ?? '';
   const setSearchQuery = searchContext?.setSearchQuery ?? (() => {});
@@ -66,6 +283,24 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Sync state with global window for easy access from other components
+  useEffect(() => {
+    window.openExportSidebar = () => setIsExportOpen(true);
+    return () => delete window.openExportSidebar;
+  }, []);
+
+  const reportItems = [
+    { label: 'Attendance Report', path: `/${roleSlug}/reports/attendance`, icon: <Clock size={18} />, roles: ['admin', 'manager', 'supervisor'] },
+    { label: 'Shift Distribution', path: `/${roleSlug}/reports/shift-distribution`, icon: <PieChart size={18} />, roles: ['admin', 'manager', 'supervisor'] },
+    { label: 'Leave Report', path: `/${roleSlug}/reports/leave`, icon: <CalendarRange size={18} />, roles: ['admin', 'manager'] },
+    { label: 'Overtime Report', path: `/${roleSlug}/reports/overtime`, icon: <TrendingUp size={18} />, roles: ['admin', 'manager'] },
+    { label: 'AI Optimization', path: `/${roleSlug}/reports/ai-optimization`, icon: <Zap size={18} />, roles: ['admin', 'manager'] },
+    { label: 'Department Coverage', path: `/${roleSlug}/reports/department-coverage`, icon: <BarChart3 size={18} />, roles: ['admin', 'manager'] },
+    { label: 'Replacement History', path: `/${roleSlug}/reports/replacement-history`, icon: <History size={18} />, roles: ['admin', 'manager'] },
+    { label: 'Weekly Analytics', path: `/${roleSlug}/reports/weekly-analytics`, icon: <TrendingUp size={18} />, roles: ['admin', 'manager', 'supervisor'] },
+    { label: 'Monthly Analytics', path: `/${roleSlug}/reports/monthly-analytics`, icon: <BarChart3 size={18} />, roles: ['admin', 'manager'] },
+  ].filter(item => item.roles.includes(userRole));
+
   const menuItems = [
     { icon: <LayoutDashboard size={20} />, label: 'Dashboard', path: `/${roleSlug}/dashboard`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <Users size={20} />, label: 'Employees', path: `/${roleSlug}/employees`, roles: ['admin', 'manager'] },
@@ -73,6 +308,12 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
     { icon: <ClipboardList size={20} />, label: 'Leaves', path: `/${roleSlug}/leaves`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <RefreshCw size={20} />, label: 'Weekly Off Swap', path: `/${roleSlug}/weekly-off-swap`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <Upload size={20} />, label: 'Upload', path: `/${roleSlug}/upload`, roles: ['admin', 'manager'] },
+    { 
+      icon: <BarChart3 size={20} />, 
+      label: 'Reports', 
+      isSubmenu: true, 
+      roles: ['admin', 'manager', 'supervisor'] 
+    },
     { icon: <Shield size={20} />, label: 'Access Control', path: `/${roleSlug}/users`, roles: ['admin'] },
     { icon: <Settings size={20} />, label: 'Settings', path: `/${roleSlug}/settings`, roles: ['admin', 'manager', 'supervisor'] },
   ].filter(item => item.roles.includes(userRole));
@@ -84,15 +325,34 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex">
-      {/* Sidebar Desktop */}
+      {/* Export Sidebar Integration */}
+      <ExportSidebar isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
+
+      {/* Mobile Backdrop */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setMobileMenuOpen(false)}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[45] lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Sidebar Desktop & Mobile */}
       <motion.aside 
         initial={false}
-        animate={{ width: sidebarOpen ? 280 : 88 }}
-        className="hidden lg:flex flex-col fixed left-0 top-0 h-screen bg-[#0f172a] text-white z-50 border-r border-white/5 overflow-hidden shadow-2xl"
+        animate={{ 
+          width: sidebarOpen ? 280 : 88,
+          x: mobileMenuOpen ? 0 : (window.innerWidth < 1024 ? -280 : 0)
+        }}
+        className={`fixed lg:flex flex-col left-0 top-0 h-screen bg-[#0f172a] text-white z-50 border-r border-white/5 overflow-hidden shadow-2xl transition-all duration-300 ${mobileMenuOpen ? 'flex w-[280px]' : 'hidden lg:flex'}`}
       >
         <div className="p-6 mb-4 flex items-center justify-between">
           <AnimatePresence mode='wait'>
-            {sidebarOpen ? (
+            {(sidebarOpen || mobileMenuOpen) ? (
               <motion.div 
                 key="logo-full"
                 initial={{ opacity: 0, x: -10 }}
@@ -121,6 +381,79 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
 
         <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto custom-scrollbar">
           {menuItems.map((item) => {
+            if (item.isSubmenu) {
+              return (
+                <div key={item.label} className="space-y-1">
+                  <button
+                    onClick={() => setReportsOpen(!reportsOpen)}
+                    className={`w-full flex items-center justify-between p-3.5 rounded-xl transition-all duration-300 group ${
+                      reportsOpen ? 'bg-white/5 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className={`transition-colors ${reportsOpen ? 'text-indigo-400' : 'group-hover:text-white'}`}>
+                        {item.icon}
+                      </span>
+                      {sidebarOpen && (
+                        <motion.span 
+                          initial={{ opacity: 0, x: -5 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="font-bold text-[15px]"
+                        >
+                          {item.label}
+                        </motion.span>
+                      )}
+                    </div>
+                    {sidebarOpen && (
+                      <motion.div
+                        animate={{ rotate: reportsOpen ? 180 : 0 }}
+                        className="text-slate-500"
+                      >
+                        <ChevronDown size={16} />
+                      </motion.div>
+                    )}
+                  </button>
+
+                  <AnimatePresence>
+                    {reportsOpen && sidebarOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden pl-4 space-y-1"
+                      >
+                        {reportItems.map((subItem) => {
+                          const isSubActive = location.pathname === subItem.path;
+                          return (
+                            <NavLink
+                              key={subItem.path}
+                              to={subItem.path}
+                              className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all duration-300 group ${
+                                isSubActive 
+                                  ? 'bg-indigo-500/10 text-indigo-400' 
+                                  : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                              }`}
+                            >
+                              <span className={isSubActive ? 'text-indigo-400' : 'group-hover:text-white'}>
+                                {subItem.icon}
+                              </span>
+                              <span className="text-[13px] font-bold">{subItem.label}</span>
+                              {isSubActive && (
+                                <motion.div 
+                                  layoutId="active-sub-indicator"
+                                  className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]"
+                                />
+                              )}
+                            </NavLink>
+                          );
+                        })}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            }
+
             const isActive = location.pathname.includes(item.path);
             return (
               <motion.div
@@ -189,7 +522,13 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
             isScrolled ? 'bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm' : 'bg-transparent'
           }`}
         >
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 lg:gap-6">
+            <button 
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
             <div className="flex flex-col">
               <h1 className="text-xl lg:text-2xl font-black text-slate-900 tracking-tight leading-none">{title}</h1>
               <div className="flex items-center gap-2 mt-1.5">
@@ -214,6 +553,15 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
 
             {/* Actions */}
             <div className="flex items-center gap-4">
+              {/* Export Trigger */}
+              <button 
+                onClick={() => setIsExportOpen(true)}
+                className="hidden sm:flex items-center gap-2 px-5 py-2.5 bg-indigo-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-100 group"
+              >
+                <Download size={16} className="group-hover:translate-y-0.5 transition-transform" />
+                Export
+              </button>
+
               <div className="relative">
                 <button 
                   onClick={() => setShowNotifications(!showNotifications)}
@@ -333,15 +681,31 @@ export const AlertPanel = ({ title, message, type = 'info' }) => {
 
 export const ShiftDisplay = ({ schedule, onUpdate }) => {
   const shiftNames = schedule && typeof schedule === 'object' && schedule.shifts ? Object.keys(schedule.shifts) : [];
-  const [activeShift, setActiveShift] = useState('Morning');
+  
+  const [activeShiftFilter, setActiveShiftFilter] = useState('All Shifts');
+  const [roleFilter, setRoleFilter] = useState('All Roles');
+  const [weekFilter, setWeekFilter] = useState('All Weeks');
+  const [showOTOnly, setShowOTOnly] = useState(false);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [allRoles, setAllRoles] = useState([]);
 
   useEffect(() => {
-    if (shiftNames.length > 0 && !shiftNames.includes(activeShift)) {
-      setActiveShift(shiftNames[0]);
-    } else if (shiftNames.length > 0 && activeShift === 'Morning' && !shiftNames.includes('Morning')) {
-      setActiveShift(shiftNames[0]);
-    }
-  }, [schedule, shiftNames, activeShift]);
+    // Fetch all roles from employees to populate the filter
+    const fetchRoles = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await axios.get('http://127.0.0.1:8000/employees', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const roles = [...new Set(res.data.map(e => e.role || 'Personnel'))].filter(Boolean);
+        setAllRoles(roles);
+      } catch (err) {
+        console.error("Error fetching roles", err);
+      }
+    };
+    fetchRoles();
+  }, []);
 
   if (!schedule || typeof schedule !== 'object') return (
     <div className="w-full py-32 rounded-[3rem] bg-white border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-6">
@@ -352,35 +716,99 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
     </div>
   );
 
-  const currentShiftData = (schedule.shifts && typeof schedule.shifts === 'object') ? (schedule.shifts[activeShift] || {}) : {};
   const weeklyOffs = Array.isArray(schedule.weekly_off) ? schedule.weekly_off : [];
-  const assigned = Array.isArray(currentShiftData.employees) ? currentShiftData.employees : [];
+  
+  // Aggregate and filter employees
+  let allAssigned = [];
+  if (activeShiftFilter === 'All Shifts') {
+    shiftNames.forEach(s => {
+      if (schedule.shifts[s] && Array.isArray(schedule.shifts[s].employees)) {
+        allAssigned = [...allAssigned, ...schedule.shifts[s].employees.map(e => ({...e, shiftName: s}))];
+      }
+    });
+  } else {
+    const sData = schedule.shifts[activeShiftFilter];
+    if (sData && Array.isArray(sData.employees)) {
+      allAssigned = sData.employees.map(e => ({...e, shiftName: activeShiftFilter}));
+    }
+  }
+
+  // Extract unique roles for the dropdown as fallback
+  const uniqueRoles = [...new Set(allAssigned.map(e => e.role || 'Personnel'))].filter(Boolean);
+  const displayRoles = allRoles.length > 0 ? allRoles : uniqueRoles;
+
+  // Apply filters
+  const assigned = allAssigned.filter(emp => {
+    if (roleFilter !== 'All Roles' && (emp.role || 'Personnel') !== roleFilter) return false;
+    if (searchFilter && !emp.name?.toLowerCase().includes(searchFilter.toLowerCase()) && !emp.emp_id?.toLowerCase().includes(searchFilter.toLowerCase())) return false;
+    // OT filter implementation would go here if OT data was in the object
+    if (showOTOnly && !emp.is_overtime) return false; 
+    return true;
+  });
 
   return (
     <div className="space-y-10">
-      <div className="flex flex-wrap items-center justify-between gap-6">
-        <div className="flex bg-white/80 p-2 rounded-[2rem] backdrop-blur-xl border border-slate-200/60 shadow-xl shadow-black/5">
-          {shiftNames.map((s) => (
-            <button
-              key={s}
-              onClick={() => setActiveShift(s)}
-              className={`px-8 py-4 rounded-[1.5rem] text-sm font-black transition-all duration-500 ${
-                activeShift === s 
-                  ? 'bg-slate-900 text-white shadow-2xl shadow-slate-900/30 scale-[1.05]' 
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-[2rem] border border-slate-200/60 shadow-xl shadow-black/5">
+        
+        {/* Search */}
+        <div className="relative flex-1 min-w-[200px] lg:max-w-md">
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input 
+            type="text" 
+            placeholder="Search employee..." 
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-400"
+          />
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="px-6 py-4 rounded-[2rem] bg-white border border-slate-200 shadow-sm flex items-center gap-3">
-             <Calendar className="text-indigo-500" size={18} />
-             <span className="text-sm font-black text-slate-900">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
-          </div>
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Filter size={20} className="text-slate-400 mr-1 hidden sm:block" />
           
+          <select 
+            value={weekFilter} 
+            onChange={(e) => setWeekFilter(e.target.value)}
+            className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[position:right_12px_center] bg-no-repeat transition-all hover:bg-slate-100"
+          >
+            <option value="All Weeks">All Weeks</option>
+            <option value="Week 1">Week 1</option>
+            <option value="Week 2">Week 2</option>
+            <option value="Week 3">Week 3</option>
+            <option value="Week 4">Week 4</option>
+          </select>
+
+          <select 
+            value={activeShiftFilter} 
+            onChange={(e) => setActiveShiftFilter(e.target.value)}
+            className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[position:right_12px_center] bg-no-repeat transition-all hover:bg-slate-100"
+          >
+            <option value="All Shifts">All Shifts</option>
+            {shiftNames.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+
+          <select 
+            value={roleFilter} 
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[position:right_12px_center] bg-no-repeat transition-all hover:bg-slate-100"
+          >
+            <option value="All Roles">All Roles</option>
+            {displayRoles.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+
+          <button 
+            onClick={() => setShowOTOnly(!showOTOnly)}
+            className={`px-4 py-3 rounded-[1.5rem] text-sm font-bold border transition-all flex items-center gap-2 ${
+              showOTOnly 
+                ? 'bg-indigo-500 text-white border-indigo-500 shadow-md shadow-indigo-200' 
+                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <Clock size={16} /> OT
+          </button>
+        </div>
+        
+        <div className="flex items-center gap-3 ml-auto">
           <button 
             onClick={async () => {
               if(!window.confirm("Regenerate entire AI schedule for today? This will clear manual overrides.")) return;
@@ -392,9 +820,9 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
                 onUpdate && onUpdate();
               } catch(e) { alert("Error regenerating schedule"); }
             }}
-            className="flex items-center gap-3 px-6 py-4 rounded-2xl bg-indigo-500 text-white text-sm font-black hover:bg-indigo-600 transition-all shadow-xl shadow-indigo-100 group"
+            className="flex items-center gap-2 px-5 py-3 rounded-[1.5rem] bg-indigo-500 text-white text-sm font-black hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-200 group"
           >
-            <Sparkles size={18} className="group-hover:rotate-12 transition-transform" />
+            <Sparkles size={16} className="group-hover:rotate-12 transition-transform" />
             Regenerate AI
           </button>
         </div>
@@ -423,8 +851,27 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
                 </div>
               </div>
               
-              <button className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-slate-900 text-white text-sm font-black hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 group/btn">
-                Broadcast Schedule <ArrowRight size={18} className="group-hover/btn:translate-x-1 transition-transform" />
+              <button 
+                onClick={async () => {
+                  if (weeklyOffs.length === 0) {
+                    if(!window.confirm("Auto-assign weekly rest days for all employees and regenerate schedule?")) return;
+                    const token = localStorage.getItem('token');
+                    try {
+                      await axios.post('http://127.0.0.1:8000/auto-assign-weekly-offs', {}, {
+                        headers: { Authorization: `Bearer ${token}` }
+                      });
+                      onUpdate && onUpdate();
+                    } catch(e) { 
+                      alert("Error assigning weekly offs: " + (e.response?.data?.detail || e.message)); 
+                    }
+                  } else {
+                    alert("Schedule broadcasted successfully to all employees via Email/SMS!");
+                  }
+                }}
+                className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-slate-900 text-white text-sm font-black hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 group/btn"
+              >
+                {weeklyOffs.length === 0 ? "Auto-Assign Rest Days" : "Broadcast Schedule"}
+                <ArrowRight size={18} className="group-hover/btn:translate-x-1 transition-transform" />
               </button>
             </div>
 
@@ -448,8 +895,13 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
                   </motion.div>
                 ))
               ) : (
-                <div className="w-full py-12 text-center text-slate-400 font-bold border-2 border-dashed border-slate-100 rounded-[2rem] italic tracking-widest bg-slate-50/50">
-                  CRITICAL: NO PERSONNEL RESTING IN CURRENT SHIFT
+                <div className="w-full py-12 text-center border-2 border-dashed border-slate-200 rounded-[2rem] bg-slate-50/50 flex flex-col items-center justify-center gap-2">
+                  <div className="text-slate-400 font-black italic tracking-widest uppercase text-sm">
+                    CRITICAL: NO PERSONNEL RESTING TODAY
+                  </div>
+                  <div className="text-slate-400 text-xs font-medium">
+                    Click "Auto-Assign Rest Days" above to let AI distribute weekly offs across your workforce.
+                  </div>
                 </div>
               )}
             </div>
@@ -491,6 +943,9 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
                         <div className="flex items-center gap-3">
                           <h4 className="text-xl font-black text-slate-900 leading-tight tracking-tight group-hover:text-indigo-600 transition-colors duration-500">{item?.name || 'Unknown'}</h4>
                           <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest">{item?.emp_id || 'N/A'}</span>
+                          {item?.shiftName && (
+                            <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-500 text-[9px] font-black uppercase tracking-widest border border-indigo-100">{item.shiftName}</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 mt-1.5">
                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>

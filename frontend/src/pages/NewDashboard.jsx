@@ -84,56 +84,66 @@ export default function NewDashboard() {
     fetchData();
   }, []);
 
-  // Calculate stats from actual Excel data
-  const totalEmployees = summary?.total_employees || 1000;
-  const presentToday = summary?.active_shifts || 500; // 500 Present from Excel
-  const onLeaveToday = summary?.today_leaves || 500; // 500 On Leave from Excel
-  const totalShifts = 3; // Morning, Afternoon, Night
-  const departments = 5; // IT, Sales, Support, Finance, HR
+  // Calculate stats from actual backend data
+  const totalEmployees = summary?.total_employees || 0;
+  const presentToday = summary?.active_shifts || 0;
+  const onLeaveToday = summary?.today_leaves || 0;
+  const weeklyOffToday = summary?.today_weekly_off || 0;
+  const absentToday = Math.max(0, totalEmployees - presentToday - onLeaveToday - weeklyOffToday);
+  
+  const totalShiftsCount = Object.keys(summary?.shift_assignments || {}).length || 3;
+  const departmentsCount = Object.keys(summary?.department_distribution || {}).length || 0;
 
-  // Shift distribution data (from Excel: Morning: 333, Afternoon: 334, Night: 333)
-  const shiftData = [
-    { name: 'Morning', value: 333, percentage: 33.30, color: '#3B82F6', time: '6:00 AM - 2:00 PM' },
-    { name: 'Afternoon', value: 334, percentage: 33.40, color: '#F59E0B', time: '2:00 PM - 10:00 PM' },
-    { name: 'Night', value: 333, percentage: 33.30, color: '#1F2937', time: '10:00 PM - 6:00 AM' }
-  ];
+  // Dynamic Shift distribution data
+  const shiftData = Object.entries(summary?.shift_assignments || {}).map(([name, count], idx) => {
+    const colors = ['#3B82F6', '#F59E0B', '#1F2937', '#10B981'];
+    const total = Object.values(summary?.shift_assignments || {}).reduce((a, b) => a + b, 0);
+    return {
+      name,
+      value: count,
+      percentage: total > 0 ? ((count / total) * 100).toFixed(2) : 0,
+      color: colors[idx % colors.length],
+      time: name === 'Morning' ? '6:00 AM - 2:00 PM' : name === 'Afternoon' ? '2:00 PM - 10:00 PM' : '10:00 PM - 6:00 AM'
+    };
+  });
 
-  // Department wise employee count (from Excel: each department has 200 employees)
-  const departmentData = [
-    { name: 'IT', count: 200 },
-    { name: 'Sales', count: 200 },
-    { name: 'Support', count: 200 },
-    { name: 'Finance', count: 200 },
-    { name: 'HR', count: 200 }
-  ];
+  // Dynamic Department wise employee count
+  const departmentData = Object.entries(summary?.department_distribution || {}).map(([name, count]) => ({
+    name,
+    count
+  }));
 
-  // Attendance overview (from Excel: Present: 500, On Leave: 500)
+  // Dynamic Attendance overview
   const attendanceData = [
-    { name: 'Present', value: presentToday, percentage: 50.00, color: '#10B981' },
-    { name: 'On Leave', value: onLeaveToday, percentage: 50.00, color: '#F59E0B' },
-    { name: 'Absent', value: 0, percentage: 0.00, color: '#9CA3AF' }
-  ];
+    { name: 'Present', value: presentToday, color: '#10B981' },
+    { name: 'On Leave', value: onLeaveToday, color: '#F59E0B' },
+    { name: 'Weekly Off', value: weeklyOffToday, color: '#3B82F6' },
+    { name: 'Absent', value: absentToday, color: '#9CA3AF' }
+  ].filter(d => d.value > 0);
 
-  // Recent leave requests (sample data - would come from API in production)
-  const recentLeaves = [
-    { name: 'Employee_1', department: 'IT', type: 'Sick Leave', date: '14 May 2026', status: 'Approved' },
-    { name: 'Employee_3', department: 'Support', type: 'Personal Leave', date: '14 May 2026', status: 'Approved' },
-    { name: 'Employee_5', department: 'HR', type: 'Casual Leave', date: '14 May 2026', status: 'Approved' },
-    { name: 'Employee_7', department: 'Finance', type: 'Sick Leave', date: '14 May 2026', status: 'Pending' },
-    { name: 'Employee_9', department: 'Sales', type: 'Personal Leave', date: '14 May 2026', status: 'Approved' }
-  ];
+  const attendancePercentage = totalEmployees > 0 ? ((presentToday / totalEmployees) * 100).toFixed(2) : '0.00';
 
-  // Today's shift schedule (based on Excel data)
-  const todaySchedule = [
-    { shift: 'Morning Shift', time: '6:00 AM - 2:00 PM', employees: 333, status: 'Active' },
-    { shift: 'Afternoon Shift', time: '2:00 PM - 10:00 PM', employees: 334, status: 'Active' },
-    { shift: 'Night Shift', time: '10:00 PM - 6:00 AM', employees: 333, status: 'Active' }
-  ];
+  // Dynamic Recent leave requests
+  const recentLeaves = leaves.slice(0, 5).map(l => ({
+    name: l.employee_name,
+    department: l.department || 'General',
+    type: 'General Leave',
+    date: l.date,
+    status: 'Approved'
+  }));
 
-  // Bottom metrics (calculated from Excel data)
+  // Dynamic Today's shift schedule
+  const todaySchedule = Object.entries(summary?.shift_assignments || {}).map(([name, count], idx) => ({
+    shift: `${name} Shift`,
+    time: name === 'Morning' ? '6:00 AM - 2:00 PM' : name === 'Afternoon' ? '2:00 PM - 10:00 PM' : '10:00 PM - 6:00 AM',
+    employees: count,
+    status: 'Active'
+  }));
+
+  // Bottom metrics
   const metrics = [
     { label: 'Schedules Generated', value: String(schedulesGenerated), subtitle: 'This Month', icon: Calendar, color: 'bg-pink-50 text-pink-600' },
-    { label: 'Attendance Rate', value: '50.00%', subtitle: 'Currently Present', icon: CheckCircle2, color: 'bg-green-50 text-green-600' },
+    { label: 'Attendance Rate', value: `${attendancePercentage}%`, subtitle: 'Currently Present', icon: CheckCircle2, color: 'bg-green-50 text-green-600' },
     { label: 'Overtime Hours', value: '45.30', subtitle: 'This Month', icon: Clock, color: 'bg-blue-50 text-blue-600' },
     { label: 'Productivity Rate', value: '88.10%', subtitle: 'This Month', icon: TrendingUp, color: 'bg-emerald-50 text-emerald-600' },
     { label: 'Employee Satisfaction', value: '4.2 / 5', subtitle: 'This Month', icon: Users, color: 'bg-purple-50 text-purple-600' }
@@ -151,7 +161,10 @@ export default function NewDashboard() {
             <p className="text-gray-600">Here's what's happening with your organization today.</p>
           </div>
           <div className="flex gap-3">
-            <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-semibold text-sm">
+            <button 
+              onClick={() => window.openExportSidebar && window.openExportSidebar()}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-semibold text-sm"
+            >
               <Download size={18} />
               Export Report
             </button>
@@ -185,7 +198,7 @@ export default function NewDashboard() {
               <div>
                 <p className="text-sm text-gray-600 mb-1">Present Today</p>
                 <p className="text-3xl font-bold text-gray-900">{presentToday}</p>
-                <p className="text-xs text-gray-600 font-semibold mt-1">50.00% of total</p>
+                <p className="text-xs text-gray-600 font-semibold mt-1">{attendancePercentage}% of total</p>
               </div>
             </div>
           </div>
@@ -198,7 +211,7 @@ export default function NewDashboard() {
               <div>
                 <p className="text-sm text-gray-600 mb-1">On Leave Today</p>
                 <p className="text-3xl font-bold text-gray-900">{onLeaveToday}</p>
-                <p className="text-xs text-gray-600 font-semibold mt-1">50.00% of total</p>
+                <p className="text-xs text-gray-600 font-semibold mt-1">{(totalEmployees > 0 ? (onLeaveToday / totalEmployees * 100).toFixed(2) : 0)}% of total</p>
               </div>
             </div>
           </div>
@@ -210,8 +223,8 @@ export default function NewDashboard() {
               </div>
               <div>
                 <p className="text-sm text-gray-600 mb-1">Total Shifts</p>
-                <p className="text-3xl font-bold text-gray-900">{totalShifts}</p>
-                <p className="text-xs text-gray-600 font-semibold mt-1">Morning, Afternoon, Night</p>
+                <p className="text-3xl font-bold text-gray-900">{totalShiftsCount}</p>
+                <p className="text-xs text-gray-600 font-semibold mt-1">{Object.keys(summary?.shift_assignments || {}).join(', ')}</p>
               </div>
             </div>
           </div>
@@ -223,8 +236,8 @@ export default function NewDashboard() {
               </div>
               <div>
                 <p className="text-sm text-gray-600 mb-1">Departments</p>
-                <p className="text-3xl font-bold text-gray-900">{departments}</p>
-                <p className="text-xs text-gray-600 font-semibold mt-1">IT, Sales, Support, Finance, HR</p>
+                <p className="text-3xl font-bold text-gray-900">{departmentsCount}</p>
+                <p className="text-xs text-gray-600 font-semibold mt-1">{Object.keys(summary?.department_distribution || {}).join(', ')}</p>
               </div>
             </div>
           </div>
@@ -307,7 +320,7 @@ export default function NewDashboard() {
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="text-3xl font-bold text-gray-900">50.00%</p>
+                  <p className="text-3xl font-bold text-gray-900">{attendancePercentage}%</p>
                   <p className="text-sm text-gray-600">Present</p>
                 </div>
               </div>
