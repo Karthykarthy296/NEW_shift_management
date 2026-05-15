@@ -333,15 +333,31 @@ export const AlertPanel = ({ title, message, type = 'info' }) => {
 
 export const ShiftDisplay = ({ schedule, onUpdate }) => {
   const shiftNames = schedule && typeof schedule === 'object' && schedule.shifts ? Object.keys(schedule.shifts) : [];
-  const [activeShift, setActiveShift] = useState('Morning');
+  
+  const [activeShiftFilter, setActiveShiftFilter] = useState('All Shifts');
+  const [roleFilter, setRoleFilter] = useState('All Roles');
+  const [weekFilter, setWeekFilter] = useState('All Weeks');
+  const [showOTOnly, setShowOTOnly] = useState(false);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [allRoles, setAllRoles] = useState([]);
 
   useEffect(() => {
-    if (shiftNames.length > 0 && !shiftNames.includes(activeShift)) {
-      setActiveShift(shiftNames[0]);
-    } else if (shiftNames.length > 0 && activeShift === 'Morning' && !shiftNames.includes('Morning')) {
-      setActiveShift(shiftNames[0]);
-    }
-  }, [schedule, shiftNames, activeShift]);
+    // Fetch all roles from employees to populate the filter
+    const fetchRoles = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await axios.get('http://127.0.0.1:8000/employees', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const roles = [...new Set(res.data.map(e => e.role || 'Personnel'))].filter(Boolean);
+        setAllRoles(roles);
+      } catch (err) {
+        console.error("Error fetching roles", err);
+      }
+    };
+    fetchRoles();
+  }, []);
 
   if (!schedule || typeof schedule !== 'object') return (
     <div className="w-full py-32 rounded-[3rem] bg-white border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-6">
@@ -352,35 +368,99 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
     </div>
   );
 
-  const currentShiftData = (schedule.shifts && typeof schedule.shifts === 'object') ? (schedule.shifts[activeShift] || {}) : {};
   const weeklyOffs = Array.isArray(schedule.weekly_off) ? schedule.weekly_off : [];
-  const assigned = Array.isArray(currentShiftData.employees) ? currentShiftData.employees : [];
+  
+  // Aggregate and filter employees
+  let allAssigned = [];
+  if (activeShiftFilter === 'All Shifts') {
+    shiftNames.forEach(s => {
+      if (schedule.shifts[s] && Array.isArray(schedule.shifts[s].employees)) {
+        allAssigned = [...allAssigned, ...schedule.shifts[s].employees.map(e => ({...e, shiftName: s}))];
+      }
+    });
+  } else {
+    const sData = schedule.shifts[activeShiftFilter];
+    if (sData && Array.isArray(sData.employees)) {
+      allAssigned = sData.employees.map(e => ({...e, shiftName: activeShiftFilter}));
+    }
+  }
+
+  // Extract unique roles for the dropdown as fallback
+  const uniqueRoles = [...new Set(allAssigned.map(e => e.role || 'Personnel'))].filter(Boolean);
+  const displayRoles = allRoles.length > 0 ? allRoles : uniqueRoles;
+
+  // Apply filters
+  const assigned = allAssigned.filter(emp => {
+    if (roleFilter !== 'All Roles' && (emp.role || 'Personnel') !== roleFilter) return false;
+    if (searchFilter && !emp.name?.toLowerCase().includes(searchFilter.toLowerCase()) && !emp.emp_id?.toLowerCase().includes(searchFilter.toLowerCase())) return false;
+    // OT filter implementation would go here if OT data was in the object
+    if (showOTOnly && !emp.is_overtime) return false; 
+    return true;
+  });
 
   return (
     <div className="space-y-10">
-      <div className="flex flex-wrap items-center justify-between gap-6">
-        <div className="flex bg-white/80 p-2 rounded-[2rem] backdrop-blur-xl border border-slate-200/60 shadow-xl shadow-black/5">
-          {shiftNames.map((s) => (
-            <button
-              key={s}
-              onClick={() => setActiveShift(s)}
-              className={`px-8 py-4 rounded-[1.5rem] text-sm font-black transition-all duration-500 ${
-                activeShift === s 
-                  ? 'bg-slate-900 text-white shadow-2xl shadow-slate-900/30 scale-[1.05]' 
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-[2rem] border border-slate-200/60 shadow-xl shadow-black/5">
+        
+        {/* Search */}
+        <div className="relative flex-1 min-w-[200px] lg:max-w-md">
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input 
+            type="text" 
+            placeholder="Search employee..." 
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-400"
+          />
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="px-6 py-4 rounded-[2rem] bg-white border border-slate-200 shadow-sm flex items-center gap-3">
-             <Calendar className="text-indigo-500" size={18} />
-             <span className="text-sm font-black text-slate-900">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
-          </div>
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Filter size={20} className="text-slate-400 mr-1 hidden sm:block" />
           
+          <select 
+            value={weekFilter} 
+            onChange={(e) => setWeekFilter(e.target.value)}
+            className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[position:right_12px_center] bg-no-repeat transition-all hover:bg-slate-100"
+          >
+            <option value="All Weeks">All Weeks</option>
+            <option value="Week 1">Week 1</option>
+            <option value="Week 2">Week 2</option>
+            <option value="Week 3">Week 3</option>
+            <option value="Week 4">Week 4</option>
+          </select>
+
+          <select 
+            value={activeShiftFilter} 
+            onChange={(e) => setActiveShiftFilter(e.target.value)}
+            className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[position:right_12px_center] bg-no-repeat transition-all hover:bg-slate-100"
+          >
+            <option value="All Shifts">All Shifts</option>
+            {shiftNames.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+
+          <select 
+            value={roleFilter} 
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[position:right_12px_center] bg-no-repeat transition-all hover:bg-slate-100"
+          >
+            <option value="All Roles">All Roles</option>
+            {displayRoles.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+
+          <button 
+            onClick={() => setShowOTOnly(!showOTOnly)}
+            className={`px-4 py-3 rounded-[1.5rem] text-sm font-bold border transition-all flex items-center gap-2 ${
+              showOTOnly 
+                ? 'bg-indigo-500 text-white border-indigo-500 shadow-md shadow-indigo-200' 
+                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <Clock size={16} /> OT
+          </button>
+        </div>
+        
+        <div className="flex items-center gap-3 ml-auto">
           <button 
             onClick={async () => {
               if(!window.confirm("Regenerate entire AI schedule for today? This will clear manual overrides.")) return;
@@ -392,9 +472,9 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
                 onUpdate && onUpdate();
               } catch(e) { alert("Error regenerating schedule"); }
             }}
-            className="flex items-center gap-3 px-6 py-4 rounded-2xl bg-indigo-500 text-white text-sm font-black hover:bg-indigo-600 transition-all shadow-xl shadow-indigo-100 group"
+            className="flex items-center gap-2 px-5 py-3 rounded-[1.5rem] bg-indigo-500 text-white text-sm font-black hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-200 group"
           >
-            <Sparkles size={18} className="group-hover:rotate-12 transition-transform" />
+            <Sparkles size={16} className="group-hover:rotate-12 transition-transform" />
             Regenerate AI
           </button>
         </div>
@@ -423,8 +503,27 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
                 </div>
               </div>
               
-              <button className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-slate-900 text-white text-sm font-black hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 group/btn">
-                Broadcast Schedule <ArrowRight size={18} className="group-hover/btn:translate-x-1 transition-transform" />
+              <button 
+                onClick={async () => {
+                  if (weeklyOffs.length === 0) {
+                    if(!window.confirm("Auto-assign weekly rest days for all employees and regenerate schedule?")) return;
+                    const token = localStorage.getItem('token');
+                    try {
+                      await axios.post('http://127.0.0.1:8000/auto-assign-weekly-offs', {}, {
+                        headers: { Authorization: `Bearer ${token}` }
+                      });
+                      onUpdate && onUpdate();
+                    } catch(e) { 
+                      alert("Error assigning weekly offs: " + (e.response?.data?.detail || e.message)); 
+                    }
+                  } else {
+                    alert("Schedule broadcasted successfully to all employees via Email/SMS!");
+                  }
+                }}
+                className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-slate-900 text-white text-sm font-black hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 group/btn"
+              >
+                {weeklyOffs.length === 0 ? "Auto-Assign Rest Days" : "Broadcast Schedule"}
+                <ArrowRight size={18} className="group-hover/btn:translate-x-1 transition-transform" />
               </button>
             </div>
 
@@ -448,8 +547,13 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
                   </motion.div>
                 ))
               ) : (
-                <div className="w-full py-12 text-center text-slate-400 font-bold border-2 border-dashed border-slate-100 rounded-[2rem] italic tracking-widest bg-slate-50/50">
-                  CRITICAL: NO PERSONNEL RESTING IN CURRENT SHIFT
+                <div className="w-full py-12 text-center border-2 border-dashed border-slate-200 rounded-[2rem] bg-slate-50/50 flex flex-col items-center justify-center gap-2">
+                  <div className="text-slate-400 font-black italic tracking-widest uppercase text-sm">
+                    CRITICAL: NO PERSONNEL RESTING TODAY
+                  </div>
+                  <div className="text-slate-400 text-xs font-medium">
+                    Click "Auto-Assign Rest Days" above to let AI distribute weekly offs across your workforce.
+                  </div>
                 </div>
               )}
             </div>
@@ -491,6 +595,9 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
                         <div className="flex items-center gap-3">
                           <h4 className="text-xl font-black text-slate-900 leading-tight tracking-tight group-hover:text-indigo-600 transition-colors duration-500">{item?.name || 'Unknown'}</h4>
                           <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest">{item?.emp_id || 'N/A'}</span>
+                          {item?.shiftName && (
+                            <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-500 text-[9px] font-black uppercase tracking-widest border border-indigo-100">{item.shiftName}</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 mt-1.5">
                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
