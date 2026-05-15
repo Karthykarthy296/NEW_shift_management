@@ -40,50 +40,48 @@ export default function NewDashboard() {
     return token;
   };
 
-  const fetchData = async () => {
-    const token = getToken();
-    if (!token) return;
+  useEffect(() => {
+    const fetchData = async () => {
+      const token = getToken();
+      if (!token) return;
 
-    try {
-      // Fetch summary
-      const summaryRes = await axios.get(`${API_URL}/dashboard-summary`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setSummary(summaryRes.data);
-
-      // Fetch schedule
-      const scheduleRes = await axios.get(`${API_URL}/get-schedule?date=${today}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setSchedule(scheduleRes.data);
-
-      // Fetch leaves
-      const leavesRes = await axios.get(`${API_URL}/leaves`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setLeaves(leavesRes.data || []);
-
-      // Fetch schedules generated count this month
       try {
-        const countRes = await axios.get(`${API_URL}/schedules-generated-count`, {
+        // Fetch summary
+        const summaryRes = await axios.get(`${API_URL}/dashboard-summary`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        setSchedulesGenerated(countRes.data?.count ?? 1);
-      } catch {
-        setSchedulesGenerated(1);
-      }
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      if (error.response?.status === 401) {
-        navigate('/login');
-      }
-    }
-  };
+        setSummary(summaryRes.data);
 
-  useEffect(() => {
+        // Fetch schedule
+        const scheduleRes = await axios.get(`${API_URL}/get-schedule?date=${today}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setSchedule(scheduleRes.data);
+
+        // Fetch leaves
+        const leavesRes = await axios.get(`${API_URL}/leaves`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setLeaves(leavesRes.data || []);
+
+        // Fetch schedules generated count this month
+        try {
+          const countRes = await axios.get(`${API_URL}/schedules-generated-count`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setSchedulesGenerated(countRes.data?.count ?? 1);
+        } catch {
+          setSchedulesGenerated(1);
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        if (error.response?.status === 401) {
+          navigate('/login');
+        }
+      }
+    };
+
     fetchData();
-    const interval = setInterval(fetchData, 30000); // Refresh every 30 seconds
-    return () => clearInterval(interval);
   }, []);
 
   // Calculate stats from actual Excel data

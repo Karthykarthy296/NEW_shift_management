@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="mb-4">Dashboard</h2>
+
+{% if session.get('role') == 'admin' %}
+<div class="mb-4">
+    <form action="{{ url_for('routes.api_generate_weekoffs') }}" method="POST" class="d-inline">
+        <button type="submit" class="btn btn-success">Generate AI Weekoffs for this week</button>
+    </form>
+</div>
+{% endif %}
+
+<h4>Current Weekoffs (Week of {{ week_start }})</h4>
+<table class="table table-bordered table-striped mt-3">
+    <thead class="table-dark">
+        <tr>
+            <th>Employee ID</th>
+            <th>Name</th>
+            <th>Team</th>
+            <th>Shift</th>
+            <th>Weekoff Day</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for w in weekoffs %}
+        <tr>
+            <td>{{ w.employee.emp_id }}</td>
+            <td>{{ w.employee.name }}</td>
+            <td>{{ w.employee.team }}</td>
+            <td>{{ w.employee.shift }}</td>
+            <td><strong>{{ w.weekoff_day }}</strong></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-center">No weekoffs generated for this week yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<hr>
+
+<h4>Swap Requests</h4>
+{% if session.get('role') == 'employee' %}
+<div class="card mb-4 p-3">
+    <h5>Request a Swap</h5>
+    <form action="{{ url_for('routes.request_swap') }}" method="POST">
+        <div class="row">
+            <div class="col-md-3">
+                <input type="number" name="target_id" class="form-control" placeholder="Target Emp DB ID" required>
+            </div>
+            <div class="col-md-3">
+                <input type="text" name="requested_day" class="form-control" placeholder="Your Day (e.g. Monday)" required>
+            </div>
+            <div class="col-md-3">
+                <input type="text" name="target_day" class="form-control" placeholder="Target Day (e.g. Tuesday)" required>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-primary w-100">Submit Request</button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<table class="table table-sm mt-3">
+    <thead>
+        <tr>
+            <th>Requestor</th>
+            <th>Target</th>
+            <th>Req Day</th>
+            <th>Target Day</th>
+            <th>Status</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in swaps %}
+        <tr>
+            <td>{{ s.requestor.name }}</td>
+            <td>{{ s.target.name }}</td>
+            <td>{{ s.requested_day }}</td>
+            <td>{{ s.target_day }}</td>
+            <td><span class="badge bg-secondary">{{ s.status }}</span></td>
+            <td>
+                {% if session.get('role') == 'employee' and session.get('user_id') == s.target_id and s.status == 'Pending' %}
+                <form action="{{ url_for('routes.handle_swap', swap_id=s.id, action='accept') }}" method="POST" class="d-inline"><button class="btn btn-sm btn-success">Accept</button></form>
+                <form action="{{ url_for('routes.handle_swap', swap_id=s.id, action='reject') }}" method="POST" class="d-inline"><button class="btn btn-sm btn-danger">Reject</button></form>
+                {% elif session.get('role') == 'admin' and s.status == 'Accepted' %}
+                <form action="{{ url_for('routes.handle_swap', swap_id=s.id, action='approve') }}" method="POST" class="d-inline"><button class="btn btn-sm btn-success">Approve</button></form>
+                <form action="{{ url_for('routes.handle_swap', swap_id=s.id, action='reject') }}" method="POST" class="d-inline"><button class="btn btn-sm btn-danger">Reject</button></form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

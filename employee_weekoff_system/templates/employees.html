@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="mb-4">Manage Employees</h2>
+
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">Add Employee</div>
+    <div class="card-body">
+        <form method="POST">
+            <input type="hidden" name="action" value="add">
+            <div class="row">
+                <div class="col-md-3 mb-2"><input type="text" name="emp_id" class="form-control" placeholder="Emp ID" required></div>
+                <div class="col-md-3 mb-2"><input type="text" name="name" class="form-control" placeholder="Name" required></div>
+                <div class="col-md-3 mb-2"><input type="text" name="team" class="form-control" placeholder="Team" required></div>
+                <div class="col-md-3 mb-2"><input type="text" name="shift" class="form-control" placeholder="Shift" required></div>
+                <div class="col-md-4 mb-2"><input type="email" name="email" class="form-control" placeholder="Email" required></div>
+                <div class="col-md-4 mb-2"><input type="password" name="password" class="form-control" placeholder="Password" required></div>
+                <div class="col-md-4 mb-2"><button type="submit" class="btn btn-success w-100">Add Employee</button></div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<table class="table table-bordered table-striped">
+    <thead class="table-dark">
+        <tr>
+            <th>DB ID</th>
+            <th>Emp ID</th>
+            <th>Name</th>
+            <th>Team</th>
+            <th>Shift</th>
+            <th>Email</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for emp in employees %}
+        <tr>
+            <td>{{ emp.id }}</td>
+            <td>{{ emp.emp_id }}</td>
+            <td>{{ emp.name }}</td>
+            <td>{{ emp.team }}</td>
+            <td>{{ emp.shift }}</td>
+            <td>{{ emp.email }}</td>
+            <td>
+                <form method="POST" class="d-inline">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="id" value="{{ emp.id }}">
+                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

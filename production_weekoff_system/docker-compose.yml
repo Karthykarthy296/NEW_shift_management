@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=rootpassword
+      - DB_NAME=prod_weekoff_db
+      - SECRET_KEY=prodsecret
+      - JWT_SECRET_KEY=prodjwtsecret
+    depends_on:
+      - db
+    restart: always
+
+  db:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=prod_weekoff_db
+    volumes:
+      - prod_db_data:/var/lib/mysql
+    restart: always
+
+volumes:
+  prod_db_data:
