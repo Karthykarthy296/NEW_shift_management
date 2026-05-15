@@ -48,20 +48,44 @@ class ExcelUploadManager:
             
             for index, row in df.iterrows():
                 try:
-                    # Generate employee ID if missing
-                    emp_id = str(row.get('Employee ID', f'EMP{index+1:04d}')).strip()
-                    if pd.isna(emp_id) or not emp_id or emp_id == 'nan':
+                    # Support multiple column names for ID and Name (case-insensitive)
+                    row_keys_lower = {str(k).lower().strip(): k for k in row.keys()}
+                    
+                    # Employee ID detection
+                    id_options = ['employee id', 'emp id', 'id', 'empid', 'staff id', 'eid', 'code', 'employee #', 'employee_id']
+                    emp_id = None
+                    for opt in id_options:
+                        if opt in row_keys_lower:
+                            val = row.get(row_keys_lower[opt])
+                            if not pd.isna(val) and str(val).strip() and str(val).lower() != 'nan':
+                                emp_id = str(val).strip()
+                                break
+                    if not emp_id:
                         emp_id = f'EMP{index+1:04d}'
                     
-                    # Generate name if missing
-                    name = str(row.get('Name', f'Employee {emp_id}')).strip()
-                    if pd.isna(name) or not name or name == 'nan':
+                    # Employee Name detection
+                    name_options = ['employee name', 'name', 'full name', 'emp name', 'staff name', 'person', 'fullname']
+                    name = None
+                    for opt in name_options:
+                        if opt in row_keys_lower:
+                            val = row.get(row_keys_lower[opt])
+                            if not pd.isna(val) and str(val).strip() and str(val).lower() != 'nan':
+                                name = str(val).strip()
+                                break
+                    if not name:
                         name = f'Employee {emp_id}'
                     
-                    # Role from Excel
-                    role = str(row.get('Role', 'Staff')).strip()
-                    if pd.isna(role) or not role or role == 'nan':
-                        role = 'Staff'
+                    # Role from Excel - support multiple common column names (case-insensitive)
+                    role_options = ['role in department', 'role', 'designation', 'job title', 'position', 'role/designation', 'job category', 'roles']
+                    role = 'Staff'
+                    # Convert row keys to lowercase for insensitive matching
+                    row_keys_lower = {str(k).lower(): k for k in row.keys()}
+                    for opt in role_options:
+                        if opt in row_keys_lower:
+                            val = row.get(row_keys_lower[opt])
+                            if not pd.isna(val) and str(val).strip() and str(val).lower() != 'nan':
+                                role = str(val).strip()
+                                break
                     
                     # Default department
                     department = str(row.get('Department', 'General')).strip()
