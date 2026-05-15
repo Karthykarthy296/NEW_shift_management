@@ -37,6 +37,8 @@ export default function Leaves() {
 
   useEffect(() => {
     fetchLeaves();
+    const interval = setInterval(fetchLeaves, 15000); // Auto-refresh every 15s
+    return () => clearInterval(interval);
   }, []);
 
   const handleApplyLeave = async (e) => {

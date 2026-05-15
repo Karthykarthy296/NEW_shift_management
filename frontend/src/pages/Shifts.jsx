@@ -60,6 +60,11 @@ export default function Shifts() {
   useEffect(() => {
     fetchShifts();
     fetchSchedule();
+    const interval = setInterval(() => {
+      fetchShifts();
+      fetchSchedule();
+    }, 30000); // Auto-refresh every 30s
+    return () => clearInterval(interval);
   }, []);
 
   const startEdit = (shift) => {

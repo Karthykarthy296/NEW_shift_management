@@ -58,6 +58,7 @@ export default function Upload() {
       
       setMsg(`✓ Successfully imported ${employeesImported} employees. ${responseMsg}`);
       setMsgType('success');
+      setTimeout(() => navigate(`/${role}/dashboard`), 2000); // Redirect after 2s so they see the success msg
     } catch (err) {
       console.error('Upload error:', err);
       if (err.response?.status === 401) {
