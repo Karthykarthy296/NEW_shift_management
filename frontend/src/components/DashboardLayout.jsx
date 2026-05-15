@@ -34,7 +34,13 @@ import {
   TrendingUp,
   History,
   CalendarRange,
-  ChevronDown
+  ChevronDown,
+  Download,
+  FileSpreadsheet,
+  FileJson,
+  Printer,
+  ChevronUp,
+  Loader2
 } from 'lucide-react';
 
 export const SearchContext = createContext({
@@ -52,6 +58,206 @@ export const SearchProvider = ({ children }) => {
   );
 };
 
+// --- Export Sidebar Component ---
+const ExportSidebar = ({ isOpen, onClose }) => {
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const reports = [
+    { id: 'employees', label: 'Employee Report', icon: <Users size={20} />, description: 'Full workforce directory and skills matrix' },
+    { id: 'shifts', label: 'Shift Schedule Report', icon: <Clock size={20} />, description: 'Daily/Weekly personnel assignments' },
+    { id: 'attendance', label: 'Attendance Report', icon: <CheckCircle2 size={20} />, description: 'Presence and absence tracking' },
+    { id: 'leaves', label: 'Leave Report', icon: <CalendarRange size={20} />, description: 'Leave history and pending requests' },
+    { id: 'performance', label: 'Performance Report', icon: <TrendingUp size={20} />, description: 'AI efficiency and workload balance' },
+    { id: 'payroll', label: 'Payroll Report', icon: <Zap size={20} />, description: 'Overtime and estimated workforce costs' },
+  ];
+
+  const formats = [
+    { id: 'xlsx', label: 'Excel (.xlsx)', icon: <FileSpreadsheet size={18} />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { id: 'pdf', label: 'PDF Document (.pdf)', icon: <FileText size={18} />, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { id: 'csv', label: 'CSV File (.csv)', icon: <FileJson size={18} />, color: 'text-blue-600', bg: 'bg-blue-50' },
+  ];
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleExport = async (format) => {
+    if (!selectedReport) return;
+    setIsGenerating(true);
+    
+    try {
+      const reportName = reports.find(r => r.id === selectedReport).label;
+      const date = new Date().toISOString().split('T')[0];
+      const filename = `${reportName.replace(/\s+/g, '_')}_${date}.${format}`;
+      
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`http://127.0.0.1:8000/export/${selectedReport}`, {
+        params: { format },
+        responseType: 'blob',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      showToast(`${reportName} exported successfully!`);
+      setSelectedReport(null);
+      onClose();
+    } catch (err) {
+      console.error('Export error:', err);
+      const errorMsg = err.response?.data?.detail || 'Export failed. Check backend connectivity.';
+      showToast(errorMsg, 'danger');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <>
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={onClose}
+              className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100]"
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed right-0 top-0 h-screen w-full max-w-md bg-white shadow-2xl z-[101] flex flex-col"
+            >
+              <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">Export Center</h3>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Select report type and format</p>
+                </div>
+                <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
+                  <X size={24} className="text-slate-500" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+                {!selectedReport ? (
+                  <div className="space-y-4">
+                    {reports.map((report) => (
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        key={report.id}
+                        onClick={() => setSelectedReport(report.id)}
+                        className="w-full text-left p-6 rounded-[2rem] border border-slate-100 bg-white hover:bg-indigo-50 hover:border-indigo-100 transition-all group flex items-start gap-5 shadow-sm hover:shadow-xl hover:shadow-indigo-900/5"
+                      >
+                        <div className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-white group-hover:text-indigo-500 transition-all shadow-sm">
+                          {report.icon}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{report.label}</h4>
+                          <p className="text-xs font-bold text-slate-400 mt-1">{report.description}</p>
+                        </div>
+                        <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-400 mt-1" />
+                      </motion.button>
+                    ))}
+                  </div>
+                ) : (
+                  <motion.div 
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="space-y-8"
+                  >
+                    <button 
+                      onClick={() => setSelectedReport(null)}
+                      className="flex items-center gap-2 text-indigo-500 font-black text-xs uppercase tracking-widest hover:text-indigo-600 transition-colors"
+                    >
+                      <ChevronLeft size={16} /> Back to Reports
+                    </button>
+                    
+                    <div className="p-8 rounded-[2.5rem] bg-indigo-600 text-white shadow-2xl shadow-indigo-200 flex items-center gap-6">
+                       <div className="w-16 h-16 rounded-[1.5rem] bg-white/10 flex items-center justify-center">
+                          {reports.find(r => r.id === selectedReport).icon}
+                       </div>
+                       <div>
+                          <h4 className="text-xl font-black">{reports.find(r => r.id === selectedReport).label}</h4>
+                          <p className="text-xs font-bold text-indigo-100 mt-1">Ready for generation</p>
+                       </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Output Format</p>
+                      {formats.map((format) => (
+                        <button
+                          key={format.id}
+                          disabled={isGenerating}
+                          onClick={() => handleExport(format.id)}
+                          className="w-full flex items-center justify-between p-6 rounded-[2rem] border border-slate-100 hover:border-slate-300 transition-all group relative overflow-hidden"
+                        >
+                          <div className="flex items-center gap-4 relative z-10">
+                            <div className={`w-10 h-10 rounded-xl ${format.bg} ${format.color} flex items-center justify-center transition-transform group-hover:scale-110`}>
+                              {format.icon}
+                            </div>
+                            <span className="font-black text-slate-900">{format.label}</span>
+                          </div>
+                          <Download size={18} className="text-slate-300 group-hover:text-slate-900 relative z-10" />
+                          <div className="absolute inset-0 bg-slate-50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+
+              <AnimatePresence>
+                {isGenerating && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 bg-white/80 backdrop-blur-sm z-[110] flex flex-col items-center justify-center gap-4"
+                  >
+                    <div className="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin" />
+                    <p className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] animate-pulse">Generating Report...</p>
+                    <p className="text-xs font-bold text-slate-400 italic">Please do not close this window</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Global Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className={`fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl shadow-2xl z-[200] flex items-center gap-3 font-black text-sm ${
+              toast.type === 'success' ? 'bg-slate-900 text-white' : 'bg-rose-600 text-white'
+            }`}
+          >
+            {toast.type === 'success' ? <CheckCircle2 size={18} className="text-emerald-400" /> : <AlertCircle size={18} />}
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+};
+
 const DashboardLayout = ({ title, children, role = "Employee" }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -59,6 +265,8 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
   const [showProfile, setShowProfile] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+
   const searchContext = useContext(SearchContext);
   const searchQuery = searchContext?.searchQuery ?? '';
   const setSearchQuery = searchContext?.setSearchQuery ?? (() => {});
@@ -73,6 +281,12 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
     const handleScroll = () => setIsScrolled(window.scrollY > 10);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Sync state with global window for easy access from other components
+  useEffect(() => {
+    window.openExportSidebar = () => setIsExportOpen(true);
+    return () => delete window.openExportSidebar;
   }, []);
 
   const reportItems = [
@@ -111,6 +325,9 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex">
+      {/* Export Sidebar Integration */}
+      <ExportSidebar isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
+
       {/* Mobile Backdrop */}
       <AnimatePresence>
         {mobileMenuOpen && (
@@ -336,6 +553,15 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
 
             {/* Actions */}
             <div className="flex items-center gap-4">
+              {/* Export Trigger */}
+              <button 
+                onClick={() => setIsExportOpen(true)}
+                className="hidden sm:flex items-center gap-2 px-5 py-2.5 bg-indigo-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-100 group"
+              >
+                <Download size={16} className="group-hover:translate-y-0.5 transition-transform" />
+                Export
+              </button>
+
               <div className="relative">
                 <button 
                   onClick={() => setShowNotifications(!showNotifications)}

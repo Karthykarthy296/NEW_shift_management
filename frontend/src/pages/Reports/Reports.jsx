@@ -69,7 +69,13 @@ const ReportHeader = ({ title, description, icon: Icon, onExport, filters, setFi
       </div>
 
       <button 
-        onClick={() => onExport()}
+        onClick={() => {
+          if (window.openExportSidebar) {
+            window.openExportSidebar();
+          } else if (onExport) {
+            onExport();
+          }
+        }}
         className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200"
       >
         <Download size={16} />

@@ -1789,3 +1789,96 @@ def startup_event():
         print(f"[Startup] Error during startup: {e}")
         if 'db' in locals():
             db.close()
+
+# --- Export System Endpoints ---
+
+from fastapi.responses import StreamingResponse
+import io
+import pandas as pd
+
+@app.get("/export/{report_type}")
+def export_report(report_type: str, format: str, db: Session = Depends(get_db)):
+    """
+    Unified export endpoint for various report types and formats.
+    """
+    try:
+        data = []
+        now = datetime.datetime.now()
+        filename = f"{report_type}_{now.strftime('%Y-%m-%d')}"
+        
+        if report_type == "employees":
+            employees = db.query(Employee).all()
+            for emp in employees:
+                data.append({
+                    "Employee ID": emp.emp_id,
+                    "Name": emp.name,
+                    "Department": emp.department.name if emp.department else "N/A",
+                    "Role": emp.role,
+                    "Preferred Shift": emp.preferred_shift,
+                    "Weekly Off": emp.weekly_off,
+                    "Max Hours": emp.max_hours
+                })
+        
+        elif report_type == "shifts":
+            shifts = db.query(Shift).all()
+            for s in shifts:
+                data.append({
+                    "Shift Name": s.name,
+                    "Start Time": s.start_time,
+                    "End Time": s.end_time,
+                    "Required Staff": s.required_employees
+                })
+        
+        elif report_type == "attendance":
+            today_str = now.strftime("%Y-%m-%d")
+            schedules = db.query(Schedule).filter(Schedule.date == today_str).all()
+            for s in schedules:
+                data.append({
+                    "Date": s.date,
+                    "Employee": s.employee.name,
+                    "Shift": s.shift.name,
+                    "Status": "Present"
+                })
+                
+        elif report_type == "leaves":
+            leaves_list = db.query(Leave).all()
+            for l in leaves_list:
+                data.append({
+                    "Employee": l.employee_name,
+                    "Date": l.date,
+                    "Status": "On Leave"
+                })
+        
+        if not data:
+            data = [{"System Message": "No data available for this report type."}]
+
+        df = pd.DataFrame(data)
+        
+        if format == "csv":
+            stream = io.StringIO()
+            df.to_csv(stream, index=False)
+            response = StreamingResponse(
+                iter([stream.getvalue()]),
+                media_type="text/csv"
+            )
+            response.headers["Content-Disposition"] = f"attachment; filename={filename}.csv"
+            return response
+            
+        elif format == "xlsx":
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="Report")
+            output.seek(0)
+            response = StreamingResponse(
+                io.BytesIO(output.read()),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            response.headers["Content-Disposition"] = f"attachment; filename={filename}.xlsx"
+            return response
+            
+        else:
+            raise HTTPException(status_code=400, detail="Format not supported via backend yet. Try CSV or XLSX.")
+            
+    except Exception as e:
+        print(f"Export Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
