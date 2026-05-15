@@ -88,6 +88,8 @@ export default function Employees() {
 
   useEffect(() => {
     fetchEmployees();
+    const interval = setInterval(fetchEmployees, 15000); // Auto-refresh every 15s
+    return () => clearInterval(interval);
   }, []);
 
   const handleCreate = async (e) => {

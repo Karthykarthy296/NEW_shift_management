@@ -522,20 +522,31 @@ async def get_dashboard_summary(db: Session = Depends(get_db)):
         except Exception as e:
             print(f"✗ Error counting shift assignments: {str(e)}")
             response["shift_assignments"] = {}
+
+        # 6. Department distribution
+        try:
+            dept_query = (
+                db.query(Department.name, func.count(Employee.id))
+                .join(Employee, Employee.department_id == Department.id)
+                .group_by(Department.name)
+                .all()
+            )
+            dept_data = {name: count for name, count in dept_query if name}
+            response["department_distribution"] = dept_data
+        except Exception as e:
+            print(f"✗ Error counting department distribution: {str(e)}")
+            response["department_distribution"] = {}
+
+        # 7. Today's schedule count
+        try:
+            response["today_schedule_count"] = db.query(Schedule).filter(Schedule.date == today_str).count()
+        except Exception as e:
+            response["today_schedule_count"] = 0
         
-        print(f"\n📊 Summary:")
-        print(f"   Total Personnel: {response['total_employees']}")
-        print(f"   Active Today: {response['active_shifts']}")
-        print(f"   Absent Today: {response['today_leaves']}")
-        print(f"   Resting Today: {response['today_weekly_off']}")
+        print(f"\n📊 Summary Updated")
         print("="*50 + "\n")
         
         return response
-        
-        return response
-        
-    except HTTPException:
-        raise
     except Exception as e:
         print(f"Error in dashboard summary: {str(e)}")
         raise HTTPException(
