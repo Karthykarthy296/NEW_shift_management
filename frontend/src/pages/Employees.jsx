@@ -46,6 +46,10 @@ export default function Employees() {
   const [formData, setFormData] = useState({ emp_id: '', name: '', skills: '', preferred_shift: 'Morning', max_hours: 40, weekly_off: 'Monday' });
   const [isAdding, setIsAdding] = useState(false);
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
   // Bulk Operations State Definitions
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [rolesList, setRolesList] = useState([]);
@@ -55,6 +59,7 @@ export default function Employees() {
 
   const handleSearchChange = (value) => {
     setSearchQuery(value);
+    setCurrentPage(1);
     if (setContextSearch) setContextSearch(value);
   };
 
@@ -260,6 +265,12 @@ export default function Employees() {
     );
   });
 
+  const totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
+  const paginatedEmployees = filteredEmployees.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   return (
     <DashboardLayout title={canEdit ? "Force Management" : "Force Directory"} role={role.charAt(0).toUpperCase() + role.slice(1)}>
       {msg && <AlertPanel title="Personnel System Registry" message={msg} type={msg.includes('Error') ? 'danger' : 'success'} />}
@@ -448,7 +459,7 @@ export default function Employees() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {filteredEmployees.map((emp, idx) => (
+                  {paginatedEmployees.map((emp, idx) => (
                     <motion.tr 
                       key={emp.id}
                       initial={{ opacity: 0, x: -10 }}
@@ -535,6 +546,34 @@ export default function Employees() {
                   ))}
                 </tbody>
               </table>
+
+              {/* Premium Pagination System */}
+              {totalPages > 1 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between px-8 py-6 bg-slate-50/30 border-t border-slate-100 gap-4">
+                  <span className="text-xs font-bold text-slate-500">
+                    Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredEmployees.length)} of {filteredEmployees.length} personnel
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-all shadow-sm"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-xs font-black text-slate-750 bg-white border border-slate-200 px-3 py-2 rounded-xl shadow-sm">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <button
+                      disabled={currentPage === totalPages}
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-all shadow-sm"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

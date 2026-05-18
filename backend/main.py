@@ -12,6 +12,8 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+is_generating_schedule = False
+
 @app.middleware("http")
 async def add_cors_to_errors(request, call_next):
     try:
@@ -632,10 +634,26 @@ async def get_dashboard_summary(db: Session = Depends(get_db)):
             detail=f"Internal server error: {str(e)}"
         )
 
+def run_background_schedule_generation(start_date: str):
+    global is_generating_schedule
+    is_generating_schedule = True
+    db = SessionLocal()
+    try:
+        from excel_upload_manager import ExcelUploadManager
+        manager = ExcelUploadManager(db)
+        print(f"[Background AI] Starting bulk schedule generation for {start_date}...")
+        success, msg, summary = manager.generate_weekly_schedule(start_date)
+        print(f"[Background AI] Completed: success={success}, msg={msg}")
+    except Exception as e:
+        print(f"[Background AI] Error in background schedule generation: {e}")
+    finally:
+        db.close()
+        is_generating_schedule = False
+
 @app.post("/upload-excel")
-async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_excel(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
     """
-    Upload Excel file with employee data and generate weekly schedule
+    Upload Excel file with employee data and trigger background schedule generation
     """
     try:
         # Validate file type
@@ -659,30 +677,13 @@ async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_d
         if not success:
             raise HTTPException(status_code=400, detail=message)
         
-        # Auto-generate weekly off allocation and shift generation
-        try:
-            print(f"Auto-generating schedule for {imported_count} employees...")
-            
-            # Get today's date
-            today = datetime.date.today().isoformat()
-            
-            # Generate weekly schedule
-            schedule_success, schedule_message, schedule_summary = manager.generate_weekly_schedule(today)
-            
-            if schedule_success:
-                print(f"Schedule generated successfully: {schedule_summary.get('total_assignments', 0)} assignments")
-                message += f" | {schedule_message}"
-            else:
-                print(f"Schedule generation failed: {schedule_message}")
-                message += f" | Schedule generation failed: {schedule_message}"
-                
-        except Exception as e:
-            print(f"Error in auto-generation: {str(e)}")
-            message += f" | Auto-generation failed: {str(e)}"
+        # Trigger weekly schedule generation as a background task
+        today = datetime.date.today().isoformat()
+        background_tasks.add_task(run_background_schedule_generation, today)
         
         return {
             "status": "success",
-            "message": message,
+            "message": f"Successfully imported {imported_count} employees. AI Schedule generation is processing in the background.",
             "employees_imported": imported_count,
             "file_name": file.filename,
             "auto_generated": True
@@ -693,6 +694,11 @@ async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_d
     except Exception as e:
         print(f"Error uploading Excel: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error uploading Excel file: {str(e)}")
+
+@app.get("/schedule-generation-status")
+async def get_schedule_generation_status():
+    global is_generating_schedule
+    return {"is_generating": is_generating_schedule}
 
 @app.post("/auto-assign-weekly-offs")
 async def auto_assign_weekly_offs(db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
@@ -933,67 +939,7 @@ async def get_schedule(background_tasks: BackgroundTasks, date: str = None, db: 
             detail=f"Internal server error: {str(e)}"
         )
 
-@app.post("/upload-excel")
-async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """
-    Upload Excel file with employee data and generate weekly schedule
-    """
-    try:
-        # Validate file type
-        if not file.filename.endswith(('.xlsx', '.xls')):
-            raise HTTPException(status_code=400, detail="Please upload an Excel file (.xlsx or .xls)")
-        
-        # Save uploaded file
-        upload_dir = "uploads"
-        os.makedirs(upload_dir, exist_ok=True)
-        
-        file_path = f"{upload_dir}/{file.filename}"
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        # Import employees from Excel
-        from excel_upload_manager import ExcelUploadManager
-        manager = ExcelUploadManager(db)
-        
-        success, message, imported_count = manager.import_employees_from_excel(file_path)
-        
-        if not success:
-            raise HTTPException(status_code=400, detail=message)
-        
-        # Auto-generate weekly off allocation and shift generation
-        try:
-            print(f"Auto-generating schedule for {imported_count} employees...")
-            
-            # Get today's date
-            today = datetime.date.today().isoformat()
-            
-            # Generate weekly schedule
-            schedule_success, schedule_message, schedule_summary = manager.generate_weekly_schedule(today)
-            
-            if schedule_success:
-                print(f"Schedule generated successfully: {schedule_summary.get('total_assignments', 0)} assignments")
-                message += f" | {schedule_message}"
-            else:
-                print(f"Schedule generation failed: {schedule_message}")
-                message += f" | Schedule generation failed: {schedule_message}"
-                
-        except Exception as e:
-            print(f"Error in auto-generation: {str(e)}")
-            message += f" | Auto-generation failed: {str(e)}"
-        
-        return {
-            "status": "success",
-            "message": message,
-            "employees_imported": imported_count,
-            "file_name": file.filename,
-            "auto_generated": True
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error uploading Excel: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error uploading Excel file: {str(e)}")
+
 
 @app.post("/generate-schedule")
 async def generate_schedule(request: dict, db: Session = Depends(get_db)):

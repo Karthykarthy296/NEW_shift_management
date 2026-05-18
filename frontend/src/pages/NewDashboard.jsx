@@ -26,6 +26,7 @@ export default function NewDashboard() {
   const [schedule, setSchedule] = useState(null);
   const [leaves, setLeaves] = useState([]);
   const [schedulesGenerated, setSchedulesGenerated] = useState(1);
+  const [isGenerating, setIsGenerating] = useState(false);
   const navigate = useNavigate();
   const role = localStorage.getItem('role') || 'User';
   const username = localStorage.getItem('username') || 'User';
@@ -41,10 +42,10 @@ export default function NewDashboard() {
   };
 
   useEffect(() => {
-    const fetchData = async () => {
-      const token = getToken();
-      if (!token) return;
+    const token = getToken();
+    if (!token) return;
 
+    const fetchData = async () => {
       try {
         // Fetch summary
         const summaryRes = await axios.get(`${API_URL}/dashboard-summary`, {
@@ -82,6 +83,29 @@ export default function NewDashboard() {
     };
 
     fetchData();
+
+    // Background polling for AI schedule generation status
+    let wasGenerating = false;
+    const pollInterval = setInterval(async () => {
+      try {
+        const statusRes = await axios.get(`${API_URL}/schedule-generation-status`);
+        const currentGenerating = statusRes.data.is_generating;
+        
+        setIsGenerating(currentGenerating);
+        
+        // If it finished generating, trigger auto-refresh!
+        if (wasGenerating && !currentGenerating) {
+          console.log('[Dashboard Auto-Refresh] AI Generation completed! Reloading data...');
+          fetchData();
+        }
+        
+        wasGenerating = currentGenerating;
+      } catch (err) {
+        console.error('Error polling schedule status:', err);
+      }
+    }, 3000);
+
+    return () => clearInterval(pollInterval);
   }, []);
 
   // Calculate stats from actual backend data
@@ -152,6 +176,66 @@ export default function NewDashboard() {
   return (
     <DashboardLayout title="Dashboard">
       <div className="space-y-8">
+        {/* Pulsing AI Generator Banner */}
+        {isGenerating && (
+          <div style={{
+            background: 'linear-gradient(135deg, #eff6ff, #faf5ff)',
+            border: '1px solid #c7d2fe',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+            boxShadow: '0 4px 15px rgba(99, 102, 241, 0.08)',
+            animation: 'pulse-slow 2s infinite alternate',
+            marginBottom: '10px'
+          }}>
+            <style>{`
+              @keyframes pulse-slow {
+                0% { box-shadow: 0 4px 15px rgba(99, 102, 241, 0.08); border-color: #c7d2fe; }
+                100% { box-shadow: 0 4px 25px rgba(99, 102, 241, 0.2); border-color: #818cf8; }
+              }
+              @keyframes bounce {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-5px); }
+              }
+            `}</style>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              background: '#3b82f6',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '20px',
+              flexShrink: 0
+            }}>
+              🤖
+            </div>
+            <div style={{ flexGrow: 1 }}>
+              <h4 style={{ fontWeight: 600, color: '#1e3a8a', fontSize: '14px', margin: 0 }}>
+                AI Shift Scheduling & Balancing in Progress...
+              </h4>
+              <p style={{ color: '#4b5563', fontSize: '12px', margin: '2px 0 0 0' }}>
+                The Enterprise AI Auto-Scheduler is processing records, distributing weekly offs fairly, and balancing morning/evening/night shifts. The stats will refresh automatically.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {[0, 1, 2].map(i => (
+                <span key={i} style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: '#3b82f6',
+                  animation: 'bounce 1.2s infinite ease-in-out both',
+                  animationDelay: `${i * 0.15}s`
+                }} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Welcome Section */}
         <div className="flex items-center justify-between">
           <div>

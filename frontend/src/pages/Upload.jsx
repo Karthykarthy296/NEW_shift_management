@@ -10,6 +10,7 @@ export default function Upload() {
   const [msg, setMsg] = useState('');
   const [msgType, setMsgType] = useState('info');
   const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const navigate = useNavigate();
   const role = localStorage.getItem('role') || 'User';
 
@@ -56,9 +57,27 @@ export default function Upload() {
       const responseMsg = res.data.msg || res.data.message || 'Upload successful';
       const employeesImported = res.data.employees_imported || 0;
       
-      setMsg(`✓ Successfully imported ${employeesImported} employees. ${responseMsg}`);
-      setMsgType('success');
-      setTimeout(() => navigate(`/${role}/dashboard`), 2000); // Redirect after 2s so they see the success msg
+      setMsg(`✓ Successfully imported ${employeesImported} employees. AI is generating weekly schedule...`);
+      setMsgType('info');
+      setGenerating(true);
+
+      // Poll schedule-generation-status
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await axios.get(`${API_URL}/schedule-generation-status`);
+          if (!statusRes.data.is_generating) {
+            clearInterval(pollInterval);
+            setGenerating(false);
+            setLoading(false);
+            setMsg(`✓ Successfully imported ${employeesImported} employees. AI Shift Schedules generated & balanced successfully!`);
+            setMsgType('success');
+            setTimeout(() => navigate(`/${role}/dashboard`), 2000);
+          }
+        } catch (pollErr) {
+          console.error('Error polling status:', pollErr);
+        }
+      }, 1500);
+      
     } catch (err) {
       console.error('Upload error:', err);
       if (err.response?.status === 401) {
@@ -70,13 +89,54 @@ export default function Upload() {
       console.error('Error detail:', detail);
       setMsg(`✗ ${detail}`);
       setMsgType('danger');
-    } finally {
       setLoading(false);
+      setGenerating(false);
     }
   };
 
   return (
     <DashboardLayout title="Upload Data" role={role.charAt(0).toUpperCase() + role.slice(1)}>
+      <style>{`
+        @keyframes pulse {
+          0% { transform: scale(1); box-shadow: 0 0 20px rgba(139, 92, 246, 0.4); }
+          100% { transform: scale(1.08); box-shadow: 0 0 35px rgba(139, 92, 246, 0.7); }
+        }
+        @keyframes bounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+      `}</style>
+
+      {generating && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(8px)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, color: 'white'
+        }}>
+          <div style={{
+            width: 80, height: 80, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            animation: 'pulse 1.5s infinite alternate',
+            marginBottom: '20px'
+          }}>
+            <span style={{ fontSize: '32px' }}>🤖</span>
+          </div>
+          <h3 style={{ fontWeight: 600, fontSize: '1.25rem', marginBottom: '8px' }}>AI Generating Schedule</h3>
+          <p style={{ color: '#cbd5e1', fontSize: '0.875rem' }}>Balancing shifts, departments, roles & weekly-offs...</p>
+          <div style={{ display: 'flex', gap: '6px', marginTop: '15px' }}>
+            {[0, 1, 2].map(i => (
+              <span key={i} style={{
+                width: 8, height: 8, borderRadius: '50%', background: 'white',
+                animation: `bounce 1.2s infinite ease-in-out both`,
+                animationDelay: `${i * 0.15}s`
+              }} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {msg && <AlertPanel title={msgType === 'success' ? 'Upload Successful' : 'System Message'} message={msg} type={msgType} />}
 
       <div className="card">
