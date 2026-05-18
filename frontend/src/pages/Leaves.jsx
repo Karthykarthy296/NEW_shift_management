@@ -1,32 +1,93 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import DashboardLayout, { AlertPanel, SearchContext } from '../components/DashboardLayout';
-
-import { UserPlus, Calendar, RefreshCw } from 'lucide-react';
+import DashboardLayout from '../components/DashboardLayout';
+import { Calendar, ClipboardList, CalendarDays, CalendarRange, RefreshCw, UserCheck, Plus, X } from 'lucide-react';
 
 const API_URL = 'http://127.0.0.1:8000';
 
+const weekDays = [
+  { abbrev: 'Mon', full: 'Monday' },
+  { abbrev: 'Tue', full: 'Tuesday' },
+  { abbrev: 'Wed', full: 'Wednesday' },
+  { abbrev: 'Thu', full: 'Thursday' },
+  { abbrev: 'Fri', full: 'Friday' },
+  { abbrev: 'Sat', full: 'Saturday' },
+  { abbrev: 'Sun', full: 'Sunday' }
+];
+
 export default function Leaves() {
-  const { searchQuery } = useContext(SearchContext);
-  const [leaveName, setLeaveName] = useState('');
+  const [activeTab, setActiveTab] = useState('manage'); // 'manage' or 'history'
+  const [selectedWeek, setSelectedWeek] = useState(1); // 1, 2, 3, 4
+  const [selectedDay, setSelectedDay] = useState(0); // 0 (Mon) to 6 (Sun)
+  
+  const [schedule, setSchedule] = useState(null);
   const [leaves, setLeaves] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  
   const [msg, setMsg] = useState('');
   const [replacements, setReplacements] = useState([]);
 
-  const today = new Date().toISOString().split('T')[0];
+  // Add Leave Modal States
+  const [showAddLeaveModal, setShowAddLeaveModal] = useState(false);
+  const [employeesOptions, setEmployeesOptions] = useState([]);
+  const [modalEmpName, setModalEmpName] = useState('');
+  const [modalDate, setModalDate] = useState('');
+
+  // Search & Autocomplete States
+  const [empSearchQuery, setEmpSearchQuery] = useState('');
+  const [isEmpDropdownOpen, setIsEmpDropdownOpen] = useState(false);
+
   const navigate = useNavigate();
   const role = localStorage.getItem('role') || 'User';
 
-  const fetchLeaves = async () => {
-    const currentToken = localStorage.getItem('token');
-    if (!currentToken) return;
+  // Role authorization logic
+  const isAuthorized = useMemo(() => {
+    return ['admin', 'manager', 'supervisor'].includes(role.toLowerCase());
+  }, [role]);
+
+  const getMondayOfCurrentWeek = () => {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(today.setDate(diff));
+  };
+
+  const targetDate = useMemo(() => {
+    const monday = getMondayOfCurrentWeek();
+    const daysToAdd = (selectedWeek - 1) * 7 + selectedDay;
+    monday.setDate(monday.getDate() + daysToAdd);
+    return monday.toISOString().split('T')[0];
+  }, [selectedWeek, selectedDay]);
+
+  const targetDayName = useMemo(() => {
+    return weekDays[selectedDay].full;
+  }, [selectedDay]);
+
+  // Sync modal date when targetDate changes
+  useEffect(() => {
+    setModalDate(targetDate);
+  }, [targetDate]);
+
+  const fetchScheduleAndLeaves = async () => {
+    if (!isAuthorized) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) { navigate('/login'); return; }
+    setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/leaves`, {
-        headers: { Authorization: `Bearer ${currentToken}` }
+      // 1. Fetch Schedule for target date
+      const schedRes = await axios.get(`${API_URL}/get-schedule?date=${targetDate}`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      setLeaves(res.data);
+      setSchedule(schedRes.data);
+
+      // 2. Fetch Leaves for target date
+      const leavesRes = await axios.get(`${API_URL}/leaves?date=${targetDate}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setLeaves(leavesRes.data);
     } catch (e) {
       console.error(e);
       if (e.response?.status === 401) navigate('/login');
@@ -35,146 +96,925 @@ export default function Leaves() {
     }
   };
 
-  useEffect(() => {
-    fetchLeaves();
-    const interval = setInterval(fetchLeaves, 15000); // Auto-refresh every 15s
-    return () => clearInterval(interval);
-  }, []);
+  const fetchEmployeesOptions = async () => {
+    if (!isAuthorized) return;
 
-  const handleApplyLeave = async (e) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+      const res = await axios.get(`${API_URL}/employees`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setEmployeesOptions(res.data);
+    } catch (e) {
+      console.error("Error fetching employees list:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchScheduleAndLeaves();
+  }, [targetDate, isAuthorized]);
+
+  useEffect(() => {
+    fetchEmployeesOptions();
+  }, [isAuthorized]);
+
+  // Detailed information for employees currently on leave
+  const leavesDetailed = useMemo(() => {
+    return leaves.map(leave => {
+      const empDetails = employeesOptions.find(e => e.name === leave.employee_name || e.emp_id === leave.employee_id);
+      const shiftName = empDetails?.preferred_shift || 'Morning';
+      const roleName = empDetails?.role || 'Staff';
+      
+      let shiftStartEnd = 'N/A';
+      if (shiftName === 'Morning') shiftStartEnd = '06:00 – 12:00';
+      else if (shiftName === 'Afternoon') shiftStartEnd = '12:00 – 18:00';
+      else if (shiftName === 'Evening') shiftStartEnd = '18:00 – 00:00';
+      else if (shiftName === 'Night') shiftStartEnd = '00:00 – 06:00';
+
+      return {
+        id: leave.id,
+        name: leave.employee_name,
+        emp_id: leave.employee_id,
+        role: roleName,
+        shiftName: shiftName,
+        shiftStartEnd: shiftStartEnd
+      };
+    });
+  }, [leaves, employeesOptions]);
+
+  // Autocomplete filter logic
+  const filteredEmployees = useMemo(() => {
+    if (!empSearchQuery) return employeesOptions;
+    
+    const matched = employeesOptions.find(e => e.name === modalEmpName);
+    if (matched && `${matched.name} (${matched.emp_id})` === empSearchQuery) {
+      return employeesOptions;
+    }
+
+    const q = empSearchQuery.toLowerCase();
+    return employeesOptions.filter(emp =>
+      emp.name.toLowerCase().includes(q) || emp.emp_id.toLowerCase().includes(q)
+    );
+  }, [empSearchQuery, employeesOptions, modalEmpName]);
+
+  const handleSelectEmployee = (emp) => {
+    setModalEmpName(emp.name);
+    setEmpSearchQuery(`${emp.name} (${emp.emp_id})`);
+    setIsEmpDropdownOpen(false);
+  };
+
+  const handleGenerateSchedule = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    setActionLoading(true);
+    try {
+      const res = await axios.post(`${API_URL}/generate-schedule`, { date: targetDate }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMsg(res.data.message || 'AI Schedule successfully generated.');
+      fetchScheduleAndLeaves();
+    } catch (e) {
+      console.error(e);
+      setMsg('Error: Schedule generation failed.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancelLeave = async (empName) => {
+    if (!window.confirm(`Cancel leave for ${empName} on ${targetDate}?`)) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    setActionLoading(true);
+    setMsg('');
+    try {
+      const res = await axios.delete(`${API_URL}/cancel-leave?employee_name=${encodeURIComponent(empName)}&date=${targetDate}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMsg(res.data.msg);
+      fetchScheduleAndLeaves();
+    } catch (e) {
+      console.error(e);
+      setMsg(e.response?.data?.detail || 'Error cancelling leave');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleModalSubmit = async (e) => {
     e.preventDefault();
+    if (!modalEmpName) { alert('Please select an employee'); return; }
+    if (!modalDate) { alert('Please select a date'); return; }
+    
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    
+    setActionLoading(true);
     setMsg('');
     setReplacements([]);
-    const currentToken = localStorage.getItem('token');
-    if (!currentToken) return navigate('/login');
     try {
-      const res = await axios.post(`${API_URL}/apply-leave`, 
-        { employee_name: leaveName, date: today },
-        { headers: { Authorization: `Bearer ${currentToken}` } }
-      );
+      const res = await axios.post(`${API_URL}/apply-leave`, {
+        employee_name: modalEmpName,
+        date: modalDate
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
       setMsg(res.data.msg);
-      setReplacements(res.data.replacements || []);
-      setLeaveName('');
-      fetchLeaves();
-    } catch (error) {
-      setMsg(error.response?.data?.detail || 'Error applying leave');
-      if (error.response?.status === 401) navigate('/login');
+      if (Array.isArray(res.data.replacements)) {
+        setReplacements(res.data.replacements);
+      }
+      setShowAddLeaveModal(false);
+      setModalEmpName('');
+      setEmpSearchQuery('');
+      fetchScheduleAndLeaves();
+    } catch (e) {
+      console.error(e);
+      setMsg(e.response?.data?.detail || 'Error applying leave');
+      setShowAddLeaveModal(false);
+    } finally {
+      setActionLoading(false);
     }
   };
 
   return (
     <DashboardLayout title="Leave Management" role={role.charAt(0).toUpperCase() + role.slice(1)}>
-      {msg && <AlertPanel title="AI Action" message={msg} type={msg.includes('Error') ? 'danger' : 'success'} />}
-      
-      {replacements.length > 0 && (
-        <div className="card" style={{ marginBottom: '24px', background: '#ecfdf5', border: '1px solid #10b981' }}>
-          <div className="card-title" style={{ color: '#065f46' }}>
-            <span>Replacement Information</span>
+      <div style={lightStyles.container}>
+        
+        {/* Title Block */}
+        <div style={{ marginBottom: '2rem' }}>
+          <h1 style={lightStyles.headerTitle}>Leave Management</h1>
+          <p style={lightStyles.headerSub}>Apply leave, find replacements, and track leave history</p>
+        </div>
+
+        {/* Tab Selection & Add Leave Button */}
+        <div style={lightStyles.tabContainer}>
+          <button
+            onClick={() => setActiveTab('manage')}
+            style={activeTab === 'manage' ? lightStyles.activeTabBtn : lightStyles.inactiveTabBtn}
+          >
+            <Calendar size={18} /> Manage Leaves
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            style={activeTab === 'history' ? lightStyles.activeTabBtn : lightStyles.inactiveTabBtn}
+          >
+            <ClipboardList size={18} /> Leave History
+          </button>
+          
+          {isAuthorized && (
+            <button
+              onClick={() => setShowAddLeaveModal(true)}
+              style={lightStyles.addLeaveBtn}
+            >
+              <Plus size={18} /> Add Leave
+            </button>
+          )}
+        </div>
+
+        {/* AI Action Alerts */}
+        {msg && (
+          <div style={{
+            background: msg.includes('Error') ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+            border: msg.includes('Error') ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid rgba(16, 185, 129, 0.25)',
+            borderRadius: '1rem',
+            padding: '1.25rem',
+            marginBottom: '1.5rem',
+            color: msg.includes('Error') ? '#ef4444' : '#065f46',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontWeight: 700,
+            fontSize: '0.9rem'
+          }}>
+            <div>{msg}</div>
+            <button onClick={() => setMsg('')} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontWeight: 900 }}>✕</button>
           </div>
-          <p style={{ fontSize: '13px', color: '#065f46', marginBottom: '12px' }}>AI assigned the following employees to replace the leave request:</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {replacements.map((r, idx) => (
-              <div key={idx} style={{ 
-                padding: '10px 12px', 
-                background: '#fff', 
-                borderRadius: '6px',
-                border: '1px solid #10b981',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <span style={{ fontWeight: 600, color: '#065f46' }}>{r.employee_name}</span>
-                  <span style={{ color: '#6b7280', marginLeft: '8px' }}>({r.employee_id})</span>
+        )}
+
+        {replacements.length > 0 && (
+          <div style={{
+            background: '#ecfdf5',
+            border: '1px solid #a7f3d0',
+            borderRadius: '1.25rem',
+            padding: '1.5rem',
+            marginBottom: '1.5rem',
+            color: '#065f46'
+          }}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#064e3b', marginBottom: '0.5rem' }}>AI Shift Reassignment</h3>
+            <p style={{ fontSize: '0.85rem', margin: '0 0 1rem 0', color: '#047857' }}>AI has auto-reassigned shifts to ensure optimal force deployment.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
+              {replacements.map((r, i) => (
+                <div key={i} style={{ background: '#ffffff', padding: '0.75rem 1rem', borderRadius: '0.75rem', border: '1px solid #d1fae5', boxShadow: '0 2px 4px rgba(0, 0, 0, 0.02)' }}>
+                  <div style={{ fontWeight: 800, color: '#064e3b', fontSize: '0.85rem' }}>{r.employee_name}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#047857', opacity: 0.8 }}>{r.shift} ({r.shift_time})</div>
                 </div>
-                <div>
-                  <span style={{ 
-                    padding: '4px 8px', 
-                    background: '#10b981', 
-                    color: 'white', 
-                    borderRadius: '4px', 
-                    fontSize: '12px',
-                    fontWeight: 500
-                  }}>
-                    {r.shift}
-                  </span>
-                  <span style={{ color: '#6b7280', marginLeft: '8px', fontSize: '12px' }}>{r.shift_time}</span>
-                </div>
-              </div>
+              ))}
+            </div>
+            <button onClick={() => setReplacements([])} style={{ marginTop: '1rem', background: '#10b981', color: '#ffffff', border: 'none', padding: '0.4rem 1rem', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', boxShadow: '0 2px 8px rgba(16,185,129,0.2)' }}>Dismiss</button>
+          </div>
+        )}
+
+        {/* Card 1: Select Date */}
+        <div style={lightStyles.card}>
+          <div style={lightStyles.cardTitleRow}>
+            <CalendarDays size={20} color="#7c3aed" />
+            <span>Select Date</span>
+          </div>
+
+          {/* Weeks Selector */}
+          <div style={lightStyles.weekRow}>
+            {[1, 2, 3, 4].map(w => (
+              <button
+                key={w}
+                onClick={() => setSelectedWeek(w)}
+                style={selectedWeek === w ? lightStyles.activeWeekBtn : lightStyles.inactiveWeekBtn}
+              >
+                Week {w}
+              </button>
+            ))}
+          </div>
+
+          {/* Days Selector */}
+          <div style={lightStyles.dayRow}>
+            {weekDays.map((d, index) => (
+              <button
+                key={index}
+                onClick={() => setSelectedDay(index)}
+                style={selectedDay === index ? lightStyles.activeDayBtn : lightStyles.inactiveDayBtn}
+              >
+                <span style={lightStyles.dayLabelAbbrev}>{d.abbrev}</span>
+                <span style={lightStyles.dayLabelFull}>{d.full}</span>
+              </button>
             ))}
           </div>
         </div>
-      )}
-      
-      <div className="card">
-        <div className="card-title">
-          <span>Manage Leave</span>
-          <UserPlus size={18} color="var(--primary)" />
+
+        {/* Card 2: List Details */}
+        <div style={lightStyles.card}>
+          <div style={lightStyles.cardTitleRow}>
+            <UserCheck size={20} color="#7c3aed" />
+            <span>
+              {activeTab === 'manage' ? 'Employees on Leave' : 'Leaves'} — {targetDayName}, WEEK {selectedWeek}
+            </span>
+          </div>
+
+          {/* Action Overlay */}
+          {actionLoading && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#7c3aed', fontSize: '0.85rem', fontWeight: 700, marginBottom: '1rem' }}>
+              <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Processing AI Reassignments...
+            </div>
+          )}
+
+          {activeTab === 'manage' ? (
+            // Employees on Leave view
+            !isAuthorized ? (
+              <div style={lightStyles.emptyState}>
+                <UserCheck size={48} style={{ color: '#cbd5e1', marginBottom: '1rem' }} />
+                <div style={lightStyles.emptyStateText}>Access Restricted</div>
+                <div style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '0.5rem', textAlign: 'center', maxWidth: '380px', lineHeight: '1.4' }}>
+                  Only Admin, Supervisor, and Manager accounts are authorized to view active employee details and manage leaves.
+                </div>
+              </div>
+            ) : loading ? (
+              <div style={{ textAlign: 'center', padding: '3rem' }}>
+                <RefreshCw size={24} style={{ animation: 'spin 1s linear infinite', color: '#7c3aed' }} />
+              </div>
+            ) : leavesDetailed.length === 0 ? (
+              <div style={lightStyles.emptyState}>
+                <CalendarRange size={48} style={{ color: '#cbd5e1', marginBottom: '1rem' }} />
+                <div style={lightStyles.emptyStateText}>No employees on leave for this date.</div>
+                <p style={{ color: '#64748b', fontSize: '0.85rem', marginTop: '0.5rem', textAlign: 'center' }}>
+                  Click "Add Leave" to apply leave for an employee.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                {leavesDetailed.map((emp, idx) => (
+                  <div key={emp.id || idx} style={{
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '1rem',
+                    padding: '1.25rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                        <div style={{
+                          width: '38px', height: '38px', borderRadius: '0.55rem',
+                          background: 'rgba(239, 68, 68, 0.08)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '1rem', fontWeight: 900, color: '#ef4444',
+                          flexShrink: 0,
+                          border: '1px solid rgba(239, 68, 68, 0.2)'
+                        }}>
+                          {(emp.name || '?').charAt(0)}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {emp.name}
+                          </div>
+                          <div style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 700 }}>
+                            {emp.emp_id || 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                        <span style={{
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '999px',
+                          background: '#ffffff',
+                          color: '#475569',
+                          fontSize: '0.65rem',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          border: '1px solid #e2e8f0'
+                        }}>
+                          {emp.shiftName}
+                        </span>
+                        <span style={{
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '999px',
+                          background: '#ffffff',
+                          color: '#475569',
+                          fontSize: '0.65rem',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          border: '1px solid #e2e8f0'
+                        }}>
+                          {emp.role || 'Staff'}
+                        </span>
+                        <span style={{
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '999px',
+                          background: 'rgba(239, 68, 68, 0.08)',
+                          color: '#ef4444',
+                          fontSize: '0.65rem',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          border: '1px solid rgba(239, 68, 68, 0.15)'
+                        }}>
+                          On Leave
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.5rem' }}>
+                      <span style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 600 }}>
+                        {emp.shiftStartEnd}
+                      </span>
+
+                      <button
+                        onClick={() => handleCancelLeave(emp.name)}
+                        disabled={actionLoading}
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.08)',
+                          color: '#ef4444',
+                          border: '1px solid rgba(239, 68, 68, 0.2)',
+                          padding: '0.4rem 0.8rem',
+                          borderRadius: '0.5rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#ef4444';
+                          e.currentTarget.style.color = '#ffffff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                          e.currentTarget.style.color = '#ef4444';
+                        }}
+                      >
+                        Cancel Leave
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            // Leave History view
+            !isAuthorized ? (
+              <div style={lightStyles.emptyState}>
+                <UserCheck size={48} style={{ color: '#cbd5e1', marginBottom: '1rem' }} />
+                <div style={lightStyles.emptyStateText}>Access Restricted</div>
+                <div style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '0.5rem', textAlign: 'center', maxWidth: '380px', lineHeight: '1.4' }}>
+                  Only Admin, Supervisor, and Manager accounts are authorized to view leave history.
+                </div>
+              </div>
+            ) : loading ? (
+              <div style={{ textAlign: 'center', padding: '3rem' }}>
+                <RefreshCw size={24} style={{ animation: 'spin 1s linear infinite', color: '#7c3aed' }} />
+              </div>
+            ) : leaves.length === 0 ? (
+              <div style={lightStyles.emptyState}>
+                <CalendarRange size={48} style={{ color: '#cbd5e1', marginBottom: '1rem' }} />
+                <div style={lightStyles.emptyStateText}>No employees on leave for this date.</div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                {leaves.map((leave, idx) => (
+                  <div key={leave.id || idx} style={{
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '1rem',
+                    padding: '1.25rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                      <div style={{
+                        width: '38px', height: '38px', borderRadius: '0.55rem',
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '1rem', fontWeight: 900, color: '#ef4444',
+                        flexShrink: 0,
+                        border: '1px solid rgba(239, 68, 68, 0.2)'
+                      }}>
+                        {(leave.employee_name || '?').charAt(0)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {leave.employee_name}
+                        </div>
+                        <div style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 700 }}>
+                          ID: {leave.employee_id || 'N/A'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem' }}>
+                      <span style={{
+                        padding: '0.2rem 0.6rem',
+                        borderRadius: '999px',
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        color: '#ef4444',
+                        fontSize: '0.65rem',
+                        fontWeight: 800,
+                        textTransform: 'uppercase',
+                        border: '1px solid rgba(239, 68, 68, 0.2)'
+                      }}>
+                        On Leave
+                      </span>
+
+                      <button
+                        onClick={() => handleCancelLeave(leave.employee_name)}
+                        disabled={actionLoading}
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.08)',
+                          color: '#ef4444',
+                          border: '1px solid rgba(239, 68, 68, 0.2)',
+                          padding: '0.4rem 0.8rem',
+                          borderRadius: '0.5rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#ef4444';
+                          e.currentTarget.style.color = '#ffffff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                          e.currentTarget.style.color = '#ef4444';
+                        }}
+                      >
+                        Cancel Leave
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
         </div>
-        <p style={{ fontSize: '0.875rem', color: 'var(--text-sub)', marginBottom: '20px' }}>
-          Enter employee name to process leave. AI will automatically reassign shifts to maintain balance.
-        </p>
-        <form onSubmit={handleApplyLeave} style={{ display: 'flex', gap: '12px' }}>
-          <input 
-            type="text" 
-            className="input-field" 
-            placeholder="Search Employee..." 
-            value={leaveName}
-            onChange={e => setLeaveName(e.target.value)}
-            required
-            style={{ flex: 1 }}
-          />
-          <button type="submit" className="btn btn-primary">Process Leave</button>
-        </form>
+
       </div>
 
-      <div className="card" style={{ marginTop: '24px' }}>
-         <div className="card-title">
-            <span>Active Leaves (Today)</span>
-            <Calendar size={18} color="var(--primary)" />
-         </div>
-         <p style={{ color: 'var(--text-sub)', fontSize: '13px', marginBottom: '16px' }}>Showing employees currently on leave for {today}.</p>
-         
-         {loading ? (
-             <div style={{ padding: '40px', textAlign: 'center' }}>
-                 <RefreshCw size={24} style={{ animation: 'spin 1s linear infinite' }} />
-             </div>
-         ) : leaves.length === 0 ? (
-             <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-sub)', fontStyle: 'italic' }}>
-                No employees are on leave today.
-             </div>
-         ) : (
-             <div className="table-container">
-                 <table>
-                     <thead>
-                         <tr>
-                             <th>Employee</th>
-                             <th>ID</th>
-                             <th>Date</th>
-                             <th>Status</th>
-                         </tr>
-                     </thead>
-                     <tbody>
-                          {leaves
-                            .filter(l => {
-                              if (!searchQuery) return true;
-                              const q = searchQuery.toLowerCase();
-                              return (l.employee_name?.toLowerCase().includes(q) || l.employee_id?.toString().toLowerCase().includes(q));
-                            })
-                            .map(l => (
-                              <tr key={l.id}>
-                                  <td style={{ fontWeight: 600 }}>{l.employee_name}</td>
-                                  <td>{l.employee_id}</td>
-                                  <td>{l.date}</td>
-                                  <td><span className="badge badge-busy">ON LEAVE</span></td>
-                              </tr>
-                          ))}
-                      </tbody>
-                 </table>
-             </div>
-         )}
-      </div>
+      {/* Add Leave Modal Popup */}
+      {showAddLeaveModal && (
+        <div style={lightStyles.modalOverlay}>
+          <div style={lightStyles.modalContent}>
+            <button
+              onClick={() => {
+                setShowAddLeaveModal(false);
+                setModalEmpName('');
+                setEmpSearchQuery('');
+                setIsEmpDropdownOpen(false);
+              }}
+              style={{
+                position: 'absolute',
+                top: '1.25rem',
+                right: '1.25rem',
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer'
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Plus size={20} color="#7c3aed" /> Apply New Leave
+            </h3>
+
+            <form onSubmit={handleModalSubmit}>
+              <label style={lightStyles.formLabel}>Select Employee</label>
+              
+              {/* Type and Search Autocomplete Input */}
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="Type name or ID to search..."
+                  value={empSearchQuery}
+                  onChange={(e) => {
+                    setEmpSearchQuery(e.target.value);
+                    setModalEmpName(''); // Reset selected employee while typing
+                    setIsEmpDropdownOpen(true);
+                  }}
+                  onFocus={() => setIsEmpDropdownOpen(true)}
+                  onBlur={() => {
+                    // Small delay to allow dropdown click selection to resolve first
+                    setTimeout(() => setIsEmpDropdownOpen(false), 250);
+                  }}
+                  style={lightStyles.formInput}
+                  required
+                />
+                
+                {empSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmpSearchQuery('');
+                      setModalEmpName('');
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: '1rem',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem',
+                      fontWeight: 'bold',
+                      zIndex: 10
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
+
+                {/* Dropdown Options List */}
+                {isEmpDropdownOpen && (
+                  <div style={lightStyles.dropdownList}>
+                    {filteredEmployees.length === 0 ? (
+                      <div style={{ padding: '0.75rem 1rem', color: '#64748b', fontSize: '0.9rem' }}>
+                        No employees found
+                      </div>
+                    ) : (
+                      filteredEmployees.map(emp => (
+                        <div
+                          key={emp.emp_id}
+                          onClick={() => handleSelectEmployee(emp)}
+                          style={lightStyles.dropdownItem}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#f5f3ff';
+                            e.currentTarget.style.color = '#7c3aed';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                            e.currentTarget.style.color = '#0f172a';
+                          }}
+                        >
+                          <span style={{ fontWeight: 800 }}>{emp.name}</span>
+                          <span style={{ fontSize: '0.75rem', color: '#7c3aed', marginLeft: '0.5rem', fontWeight: 600 }}>({emp.emp_id})</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <label style={lightStyles.formLabel}>Select Date</label>
+              <input
+                type="date"
+                value={modalDate}
+                onChange={(e) => setModalDate(e.target.value)}
+                style={lightStyles.formInput}
+                required
+              />
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '2rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddLeaveModal(false);
+                    setModalEmpName('');
+                    setEmpSearchQuery('');
+                    setIsEmpDropdownOpen(false);
+                  }}
+                  style={lightStyles.modalCancelBtn}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  style={lightStyles.modalSubmitBtn}
+                >
+                  {actionLoading ? 'Applying...' : 'Apply Leave'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </DashboardLayout>
   );
 }
+
+const lightStyles = {
+  container: {
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+    borderRadius: '1.5rem',
+    padding: 0,
+    minHeight: '100%',
+    fontFamily: "'Plus Jakarta Sans', sans-serif"
+  },
+  headerTitle: {
+    fontSize: '2.25rem',
+    fontWeight: 950,
+    color: '#0f172a',
+    letterSpacing: '-0.03em',
+    marginBottom: '0.5rem',
+    marginTop: 0
+  },
+  headerSub: {
+    color: '#64748b',
+    fontSize: '1rem',
+    fontWeight: 500,
+    margin: 0
+  },
+  tabContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    marginBottom: '2rem',
+    flexWrap: 'wrap',
+    gap: '0.75rem'
+  },
+  activeTabBtn: {
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+    border: 'none',
+    padding: '0.75rem 1.5rem',
+    borderRadius: '0.85rem',
+    fontSize: '0.9rem',
+    fontWeight: 800,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    cursor: 'pointer',
+    boxShadow: '0 4px 15px rgba(124, 58, 237, 0.25)',
+    transition: 'all 0.2s'
+  },
+  inactiveTabBtn: {
+    backgroundColor: '#ffffff',
+    color: '#64748b',
+    border: '1px solid #e2e8f0',
+    padding: '0.75rem 1.5rem',
+    borderRadius: '0.85rem',
+    fontSize: '0.9rem',
+    fontWeight: 800,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  addLeaveBtn: {
+    background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)',
+    color: '#ffffff',
+    border: 'none',
+    padding: '0.75rem 1.5rem',
+    borderRadius: '0.85rem',
+    fontSize: '0.9rem',
+    fontWeight: 800,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    cursor: 'pointer',
+    boxShadow: '0 4px 15px rgba(124, 58, 237, 0.2)',
+    transition: 'all 0.2s'
+  },
+  card: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '1.25rem',
+    padding: '1.75rem',
+    marginBottom: '1.5rem',
+    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)'
+  },
+  cardTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    color: '#0f172a',
+    fontWeight: 800,
+    fontSize: '1.1rem',
+    marginBottom: '1.5rem'
+  },
+  weekRow: {
+    display: 'flex',
+    gap: '0.75rem',
+    marginBottom: '1rem'
+  },
+  activeWeekBtn: {
+    flex: 1,
+    backgroundColor: '#7c3aed',
+    color: '#ffffff',
+    border: 'none',
+    padding: '1rem',
+    borderRadius: '0.85rem',
+    fontWeight: 800,
+    fontSize: '0.95rem',
+    cursor: 'pointer',
+    textAlign: 'center',
+    transition: 'all 0.2s',
+    boxShadow: '0 4px 15px rgba(124, 58, 237, 0.25)'
+  },
+  inactiveWeekBtn: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    color: '#64748b',
+    border: '1px solid #e2e8f0',
+    padding: '1rem',
+    borderRadius: '0.85rem',
+    fontWeight: 800,
+    fontSize: '0.95rem',
+    cursor: 'pointer',
+    textAlign: 'center',
+    transition: 'all 0.2s'
+  },
+  dayRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, 1fr)',
+    gap: '0.5rem'
+  },
+  activeDayBtn: {
+    backgroundColor: '#f5f3ff',
+    color: '#7c3aed',
+    border: '2px solid #7c3aed',
+    padding: '0.75rem 0.5rem',
+    borderRadius: '0.85rem',
+    cursor: 'pointer',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s'
+  },
+  inactiveDayBtn: {
+    backgroundColor: '#f8fafc',
+    color: '#64748b',
+    border: '1px solid #e2e8f0',
+    padding: '0.75rem 0.5rem',
+    borderRadius: '0.85rem',
+    cursor: 'pointer',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s'
+  },
+  dayLabelAbbrev: {
+    fontSize: '1rem',
+    fontWeight: 800,
+    marginBottom: '2px'
+  },
+  dayLabelFull: {
+    fontSize: '0.7rem',
+    fontWeight: 500,
+    opacity: 0.8
+  },
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '3rem 1.5rem',
+    color: '#94a3b8'
+  },
+  emptyStateText: {
+    fontSize: '1rem',
+    fontWeight: 700,
+    color: '#64748b',
+    marginTop: '1rem'
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backdropFilter: 'blur(4px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '1.5rem',
+    padding: '2.5rem',
+    width: '100%',
+    maxWidth: '480px',
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+    position: 'relative'
+  },
+  formLabel: {
+    display: 'block',
+    fontSize: '0.875rem',
+    fontWeight: 750,
+    color: '#334155',
+    marginBottom: '0.5rem',
+    marginTop: '1.25rem'
+  },
+  formInput: {
+    width: '100%',
+    padding: '0.75rem 1rem',
+    borderRadius: '0.75rem',
+    border: '1px solid #cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+    fontSize: '0.95rem',
+    fontWeight: 600,
+    outline: 'none',
+    boxSizing: 'border-box',
+    transition: 'border-color 0.2s'
+  },
+  modalCancelBtn: {
+    backgroundColor: '#f1f5f9',
+    color: '#475569',
+    border: '1px solid #cbd5e1',
+    padding: '0.75rem 1.5rem',
+    borderRadius: '0.75rem',
+    fontSize: '0.9rem',
+    fontWeight: 800,
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  modalSubmitBtn: {
+    background: 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)',
+    color: '#ffffff',
+    border: 'none',
+    padding: '0.75rem 1.5rem',
+    borderRadius: '0.75rem',
+    fontSize: '0.9rem',
+    fontWeight: 800,
+    cursor: 'pointer',
+    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)',
+    transition: 'all 0.2s'
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '0.75rem',
+    marginTop: '0.35rem',
+    maxHeight: '220px',
+    overflowY: 'auto',
+    zIndex: 99999,
+    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+  },
+  dropdownItem: {
+    padding: '0.75rem 1rem',
+    cursor: 'pointer',
+    color: '#0f172a',
+    fontSize: '0.9rem',
+    transition: 'all 0.15s',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  }
+};
