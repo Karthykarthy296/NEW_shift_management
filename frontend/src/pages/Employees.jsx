@@ -28,7 +28,9 @@ import {
   MoreVertical,
   Zap,
   CheckCircle2,
-  ChevronRight
+  ChevronRight,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 const API_URL = 'http://127.0.0.1:8000';
@@ -43,6 +45,13 @@ export default function Employees() {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ emp_id: '', name: '', skills: '', preferred_shift: 'Morning', max_hours: 40, weekly_off: 'Monday' });
   const [isAdding, setIsAdding] = useState(false);
+
+  // Bulk Operations State Definitions
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [rolesList, setRolesList] = useState([]);
+  const [selectedRoleToDelete, setSelectedRoleToDelete] = useState('all');
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
 
   const handleSearchChange = (value) => {
     setSearchQuery(value);
@@ -86,9 +95,66 @@ export default function Employees() {
     }
   };
 
+  const fetchRoles = async () => {
+    const token = getToken();
+    if (!token) return;
+    try {
+      const res = await axios.get(`${API_URL}/employees/roles`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setRolesList(res.data || []);
+    } catch (err) {
+      console.error('Error fetching employee roles:', err);
+    }
+  };
+
+  const handleExecuteBulkDelete = async () => {
+    const token = getToken();
+    if (!token) return;
+    setIsDeletingBulk(true);
+    try {
+      const url = `${API_URL}/employees/bulk-delete` + (selectedRoleToDelete !== 'all' ? `?role=${encodeURIComponent(selectedRoleToDelete)}` : '');
+      const res = await axios.delete(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Success orchestration
+      setMsg(res.data.msg);
+      setIsConfirmModalOpen(false);
+      setIsBulkDeleteOpen(false);
+      
+      // Refresh list & roles
+      await fetchEmployees();
+      await fetchRoles();
+    } catch (error) {
+      console.error('Error during bulk deletion:', error);
+      let errorMsg = 'Error purging employees and records.';
+      if (error.response?.data?.detail) {
+        const detail = error.response.data.detail;
+        if (typeof detail === 'string') {
+          errorMsg = detail;
+        } else if (Array.isArray(detail)) {
+          errorMsg = detail.map(err => err.msg || JSON.stringify(err)).join(', ');
+        } else if (typeof detail === 'object') {
+          errorMsg = detail.message || JSON.stringify(detail);
+        }
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      setMsg(`Error: ${errorMsg}`);
+      setIsConfirmModalOpen(false);
+    } finally {
+      setIsDeletingBulk(false);
+    }
+  };
+
   useEffect(() => {
     fetchEmployees();
-    const interval = setInterval(fetchEmployees, 15000); // Auto-refresh every 15s
+    fetchRoles();
+    const interval = setInterval(() => {
+      fetchEmployees();
+      fetchRoles();
+    }, 15000); // Auto-refresh every 15s
     return () => clearInterval(interval);
   }, []);
 
@@ -182,6 +248,9 @@ export default function Employees() {
     setEmployees(prev => prev.map(emp => emp.id === id ? { ...emp, [field]: value } : emp));
   };
 
+  const defaultRoles = ['Manager', 'Supervisor', 'Operator', 'Security'];
+  const combinedRoles = Array.from(new Set([...defaultRoles, ...(rolesList || [])]));
+
   const filteredEmployees = employees.filter(emp => {
     const q = searchQuery?.toLowerCase() || '';
     return (
@@ -221,7 +290,21 @@ export default function Employees() {
             </div>
             
             {canEdit && (
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                 {role === 'admin' && (
+                   <button 
+                     onClick={() => setIsBulkDeleteOpen(!isBulkDeleteOpen)}
+                     className={`flex items-center gap-3 px-6 py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl group border ${
+                       isBulkDeleteOpen 
+                       ? 'bg-rose-50 border-rose-200 text-rose-600 shadow-rose-100' 
+                       : 'bg-white border-slate-100 text-slate-700 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100'
+                     }`}
+                     title="Bulk Personnel Purge"
+                   >
+                     <Trash2 size={18} />
+                     <span>Bulk Delete</span>
+                   </button>
+                 )}
                  <button 
                    onClick={() => setIsAdding(true)}
                    className="flex items-center gap-3 px-6 py-3.5 bg-slate-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-indigo-600 transition-all shadow-xl shadow-slate-100 group"
@@ -242,6 +325,53 @@ export default function Employees() {
         </div>
 
         <AnimatePresence>
+          {isBulkDeleteOpen && role === 'admin' && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="bg-rose-50/20 border-b border-rose-100 p-8 lg:p-10"
+            >
+              <div className="flex items-center justify-between mb-6">
+                 <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shadow-inner">
+                       <Trash2 size={20} />
+                    </div>
+                    <div>
+                       <h4 className="text-xl font-black text-rose-950 tracking-tight leading-none">Bulk Personnel Purge Center</h4>
+                       <p className="text-xs font-bold text-rose-400 mt-1 uppercase tracking-widest">Admin-Only System Orchestration</p>
+                    </div>
+                 </div>
+                 <button onClick={() => setIsBulkDeleteOpen(false)} className="text-rose-400 hover:text-rose-600 transition-colors"><X size={24} /></button>
+              </div>
+              
+              <div className="bg-white border border-rose-100 rounded-[2rem] p-6 lg:p-8 flex flex-col md:flex-row md:items-end gap-6 shadow-sm">
+                <div className="flex-1 space-y-2">
+                  <label className="text-[10px] font-black text-rose-950 uppercase tracking-widest ml-1">Filter by Role</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[position:right_16px_center] bg-no-repeat pr-12"
+                    value={selectedRoleToDelete} 
+                    onChange={e => setSelectedRoleToDelete(e.target.value)}
+                  >
+                    <option value="all">Delete All Employees (Entire Database)</option>
+                    {combinedRoles.map(r => (
+                      <option key={r} value={r}>Delete only "{r}" role</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <button 
+                    onClick={() => setIsConfirmModalOpen(true)}
+                    className="w-full md:w-auto flex items-center justify-center gap-3 px-8 py-3.5 bg-rose-600 text-white rounded-xl font-black text-sm uppercase tracking-widest hover:bg-rose-700 transition-all shadow-lg shadow-rose-100"
+                  >
+                    <Trash2 size={18} />
+                    <span>Execute Purge</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {isAdding && (
             <motion.div 
               initial={{ opacity: 0, height: 0 }}
@@ -409,6 +539,70 @@ export default function Employees() {
           )}
         </div>
       </div>
+
+      {/* Custom Confirmation Modal */}
+      <AnimatePresence>
+        {isConfirmModalOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !isDeletingBulk && setIsConfirmModalOpen(false)}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150]"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="fixed inset-0 m-auto w-full max-w-lg h-fit bg-white rounded-[3rem] p-10 shadow-2xl border border-slate-100 z-[151] flex flex-col gap-6"
+            >
+              <div className="flex items-center gap-4 text-rose-600">
+                <div className="w-14 h-14 bg-rose-50 rounded-2xl flex items-center justify-center shadow-inner">
+                  <AlertCircle size={28} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none">Confirm Purge Action</h3>
+                  <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mt-2">Critical Database Deletion</p>
+                </div>
+              </div>
+              
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-sm font-bold text-slate-600 leading-relaxed">
+                {selectedRoleToDelete === 'all' ? (
+                  <p>Are you sure you want to delete <span className="text-rose-600 font-black">ALL employees</span>? This will permanently remove all related schedules, weekly offs, leaves, and replacements from the database.</p>
+                ) : (
+                  <p>Delete all employees with selected role <span className="text-rose-600 font-black">"{selectedRoleToDelete}"</span>? This will permanently remove their related schedules, weekly offs, leaves, and replacements.</p>
+                )}
+                <p className="mt-3 text-xs text-slate-400 font-bold uppercase tracking-wider">⚠️ This operation is irreversible.</p>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <button 
+                  disabled={isDeletingBulk}
+                  onClick={() => setIsConfirmModalOpen(false)}
+                  className="flex-1 py-4 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-2xl text-sm font-black uppercase tracking-widest transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  disabled={isDeletingBulk}
+                  onClick={handleExecuteBulkDelete}
+                  className="flex-1 py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-sm font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-rose-100"
+                >
+                  {isDeletingBulk ? (
+                    <>
+                      <Loader2 className="animate-spin" size={18} />
+                      <span>Purging...</span>
+                    </>
+                  ) : (
+                    <span>Yes, Purge Data</span>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </DashboardLayout>
   );
 }

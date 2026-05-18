@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department, ScheduleGenerationLog
+from database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department, ScheduleGenerationLog, WeeklyShiftChange
 import schemas, auth, ai_scheduler
 import shutil
 import os
@@ -161,6 +161,84 @@ def create_employee(emp: schemas.EmployeeCreate, db: Session = Depends(get_db), 
     db.add(new_emp)
     db.commit()
     return {"msg": f"Employee {emp.name} created successfully"}
+
+
+# --- Admin Bulk Personnel Operations ---
+
+@app.get("/employees/roles")
+def get_employee_roles(db: Session = Depends(get_db)):
+    """
+    Get all unique employee roles currently defined in the database.
+    """
+    try:
+        roles = db.query(Employee.role).distinct().all()
+        # Flatten and filter empty/None values
+        unique_roles = sorted(list(set([r[0] for r in roles if r[0]])))
+        return unique_roles
+    except Exception as e:
+        print(f"Error fetching unique roles: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch unique employee roles")
+
+
+@app.delete("/employees/bulk-delete")
+def bulk_delete_employees(
+    role: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"]))
+):
+    """
+    Admin-only bulk delete endpoint. Deletes all employees or filters by role.
+    Cleans up related schedules, weekly offs, leaves, overtime logs, and weekly shift changes.
+    """
+    try:
+        # Build query to get employee IDs
+        emp_query = db.query(Employee.id)
+        if role:
+            emp_query = emp_query.filter(Employee.role == role)
+        
+        emp_ids = [r[0] for r in emp_query.all()]
+        
+        if not emp_ids:
+            return {
+                "msg": "No personnel records found matching the specified parameters.",
+                "deleted_count": 0
+            }
+        
+        # 1. Schedules
+        db.query(Schedule).filter(
+            (Schedule.employee_id.in_(emp_ids)) | (Schedule.replaced_employee_id.in_(emp_ids))
+        ).delete(synchronize_session=False)
+
+        # 2. Leaves
+        db.query(Leave).filter(Leave.employee_id.in_(emp_ids)).delete(synchronize_session=False)
+
+        # 3. WeeklyOffSwaps
+        db.query(WeeklyOffSwap).filter(
+            (WeeklyOffSwap.employee_1_id.in_(emp_ids)) | (WeeklyOffSwap.employee_2_id.in_(emp_ids))
+        ).delete(synchronize_session=False)
+
+        # 4. OvertimeLogs
+        db.query(OvertimeLog).filter(OvertimeLog.employee_id.in_(emp_ids)).delete(synchronize_session=False)
+
+        # 5. WeeklyShiftChanges
+        db.query(WeeklyShiftChange).filter(WeeklyShiftChange.employee_id.in_(emp_ids)).delete(synchronize_session=False)
+
+        # 6. Finally delete Employee rows
+        deleted_count = db.query(Employee).filter(Employee.id.in_(emp_ids)).delete(synchronize_session=False)
+
+        db.commit()
+        return {
+            "msg": f"Successfully deleted {deleted_count} employees and associated records.",
+            "deleted_count": deleted_count
+        }
+    except Exception as e:
+        db.rollback()
+        print(f"Error during bulk deletion: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database transaction aborted due to error: {str(e)}"
+        )
+
 
 @app.put("/employees/{emp_id}")
 def update_employee(emp_id: int, emp_data: schemas.EmployeeUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
@@ -1882,3 +1960,7 @@ def export_report(report_type: str, format: str, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Export Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+
+
