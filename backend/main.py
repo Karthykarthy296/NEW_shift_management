@@ -860,7 +860,7 @@ async def get_schedule(background_tasks: BackgroundTasks, date: str = None, db: 
                     "emp_id": sched.employee.emp_id or "Unknown",
                     "name": sched.employee.name or "Unknown Employee",
                     "is_override": sched.is_override or False,
-                    "role": sched.employee.preferred_shift or "Not Assigned",
+                    "role": sched.employee.role or "Staff",
                     "skills": sched.employee.skills or [],
                     "start_time": sched.shift.start_time or "00:00",
                     "end_time": sched.shift.end_time or "00:00",

@@ -2,15 +2,15 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 import axios from 'axios';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Menu, 
-  User, 
-  Calendar, 
-  LayoutDashboard, 
-  Users, 
-  Clock, 
-  LogOut, 
-  Bell, 
+import {
+  Menu,
+  User,
+  Calendar,
+  LayoutDashboard,
+  Users,
+  Clock,
+  LogOut,
+  Bell,
   Search,
   Settings,
   ChevronRight,
@@ -45,7 +45,7 @@ import {
 
 export const SearchContext = createContext({
   searchQuery: '',
-  setSearchQuery: () => {},
+  setSearchQuery: () => { },
   _isMock: true
 });
 
@@ -87,19 +87,19 @@ const ExportSidebar = ({ isOpen, onClose }) => {
   const handleExport = async (format) => {
     if (!selectedReport) return;
     setIsGenerating(true);
-    
+
     try {
       const reportName = reports.find(r => r.id === selectedReport).label;
       const date = new Date().toISOString().split('T')[0];
       const filename = `${reportName.replace(/\s+/g, '_')}_${date}.${format}`;
-      
+
       const token = localStorage.getItem('token');
       const response = await axios.get(`http://127.0.0.1:8000/export/${selectedReport}`, {
         params: { format },
         responseType: 'blob',
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -108,7 +108,7 @@ const ExportSidebar = ({ isOpen, onClose }) => {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      
+
       showToast(`${reportName} exported successfully!`);
       setSelectedReport(null);
       onClose();
@@ -126,14 +126,14 @@ const ExportSidebar = ({ isOpen, onClose }) => {
       <AnimatePresence>
         {isOpen && (
           <>
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={onClose}
               className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100]"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -173,26 +173,26 @@ const ExportSidebar = ({ isOpen, onClose }) => {
                     ))}
                   </div>
                 ) : (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     className="space-y-8"
                   >
-                    <button 
+                    <button
                       onClick={() => setSelectedReport(null)}
                       className="flex items-center gap-2 text-indigo-500 font-black text-xs uppercase tracking-widest hover:text-indigo-600 transition-colors"
                     >
                       <ChevronLeft size={16} /> Back to Reports
                     </button>
-                    
+
                     <div className="p-8 rounded-[2.5rem] bg-indigo-600 text-white shadow-2xl shadow-indigo-200 flex items-center gap-6">
-                       <div className="w-16 h-16 rounded-[1.5rem] bg-white/10 flex items-center justify-center">
-                          {reports.find(r => r.id === selectedReport).icon}
-                       </div>
-                       <div>
-                          <h4 className="text-xl font-black">{reports.find(r => r.id === selectedReport).label}</h4>
-                          <p className="text-xs font-bold text-indigo-100 mt-1">Ready for generation</p>
-                       </div>
+                      <div className="w-16 h-16 rounded-[1.5rem] bg-white/10 flex items-center justify-center">
+                        {reports.find(r => r.id === selectedReport).icon}
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-black">{reports.find(r => r.id === selectedReport).label}</h4>
+                        <p className="text-xs font-bold text-indigo-100 mt-1">Ready for generation</p>
+                      </div>
                     </div>
 
                     <div className="space-y-4">
@@ -221,7 +221,7 @@ const ExportSidebar = ({ isOpen, onClose }) => {
 
               <AnimatePresence>
                 {isGenerating && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
@@ -241,13 +241,12 @@ const ExportSidebar = ({ isOpen, onClose }) => {
       {/* Global Toast */}
       <AnimatePresence>
         {toast && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 50 }}
-            className={`fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl shadow-2xl z-[200] flex items-center gap-3 font-black text-sm ${
-              toast.type === 'success' ? 'bg-slate-900 text-white' : 'bg-rose-600 text-white'
-            }`}
+            className={`fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl shadow-2xl z-[200] flex items-center gap-3 font-black text-sm ${toast.type === 'success' ? 'bg-slate-900 text-white' : 'bg-rose-600 text-white'
+              }`}
           >
             {toast.type === 'success' ? <CheckCircle2 size={18} className="text-emerald-400" /> : <AlertCircle size={18} />}
             {toast.message}
@@ -269,7 +268,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
 
   const searchContext = useContext(SearchContext);
   const searchQuery = searchContext?.searchQuery ?? '';
-  const setSearchQuery = searchContext?.setSearchQuery ?? (() => {});
+  const setSearchQuery = searchContext?.setSearchQuery ?? (() => { });
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -308,11 +307,11 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
     { icon: <ClipboardList size={20} />, label: 'Leaves', path: `/${roleSlug}/leaves`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <RefreshCw size={20} />, label: 'Weekly Off Swap', path: `/${roleSlug}/weekly-off-swap`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <Upload size={20} />, label: 'Upload', path: `/${roleSlug}/upload`, roles: ['admin', 'manager'] },
-    { 
-      icon: <BarChart3 size={20} />, 
-      label: 'Reports', 
-      isSubmenu: true, 
-      roles: ['admin', 'manager', 'supervisor'] 
+    {
+      icon: <BarChart3 size={20} />,
+      label: 'Reports',
+      isSubmenu: true,
+      roles: ['admin', 'manager', 'supervisor']
     },
     { icon: <Shield size={20} />, label: 'Access Control', path: `/${roleSlug}/users`, roles: ['admin'] },
     { icon: <Settings size={20} />, label: 'Settings', path: `/${roleSlug}/settings`, roles: ['admin', 'manager', 'supervisor'] },
@@ -331,7 +330,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
       {/* Mobile Backdrop */}
       <AnimatePresence>
         {mobileMenuOpen && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -342,9 +341,9 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
       </AnimatePresence>
 
       {/* Sidebar Desktop & Mobile */}
-      <motion.aside 
+      <motion.aside
         initial={false}
-        animate={{ 
+        animate={{
           width: sidebarOpen ? 280 : 88,
           x: mobileMenuOpen ? 0 : (window.innerWidth < 1024 ? -280 : 0)
         }}
@@ -353,7 +352,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
         <div className="p-6 mb-4 flex items-center justify-between">
           <AnimatePresence mode='wait'>
             {(sidebarOpen || mobileMenuOpen) ? (
-              <motion.div 
+              <motion.div
                 key="logo-full"
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -366,7 +365,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
                 <span className="bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">ShiftAI</span>
               </motion.div>
             ) : (
-              <motion.div 
+              <motion.div
                 key="logo-short"
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -386,16 +385,15 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
                 <div key={item.label} className="space-y-1">
                   <button
                     onClick={() => setReportsOpen(!reportsOpen)}
-                    className={`w-full flex items-center justify-between p-3.5 rounded-xl transition-all duration-300 group ${
-                      reportsOpen ? 'bg-white/5 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'
-                    }`}
+                    className={`w-full flex items-center justify-between p-3.5 rounded-xl transition-all duration-300 group ${reportsOpen ? 'bg-white/5 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'
+                      }`}
                   >
                     <div className="flex items-center gap-4">
                       <span className={`transition-colors ${reportsOpen ? 'text-indigo-400' : 'group-hover:text-white'}`}>
                         {item.icon}
                       </span>
                       {sidebarOpen && (
-                        <motion.span 
+                        <motion.span
                           initial={{ opacity: 0, x: -5 }}
                           animate={{ opacity: 1, x: 0 }}
                           className="font-bold text-[15px]"
@@ -428,18 +426,17 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
                             <NavLink
                               key={subItem.path}
                               to={subItem.path}
-                              className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all duration-300 group ${
-                                isSubActive 
-                                  ? 'bg-indigo-500/10 text-indigo-400' 
+                              className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-all duration-300 group ${isSubActive
+                                  ? 'bg-indigo-500/10 text-indigo-400'
                                   : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
-                              }`}
+                                }`}
                             >
                               <span className={isSubActive ? 'text-indigo-400' : 'group-hover:text-white'}>
                                 {subItem.icon}
                               </span>
                               <span className="text-[13px] font-bold">{subItem.label}</span>
                               {isSubActive && (
-                                <motion.div 
+                                <motion.div
                                   layoutId="active-sub-indicator"
                                   className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]"
                                 />
@@ -463,17 +460,16 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
               >
                 <NavLink
                   to={item.path}
-                  className={({ isActive }) => `w-full flex items-center gap-4 p-3.5 rounded-xl transition-all duration-300 relative group ${
-                    isActive 
-                      ? 'bg-indigo-500/15 text-indigo-400' 
+                  className={({ isActive }) => `w-full flex items-center gap-4 p-3.5 rounded-xl transition-all duration-300 relative group ${isActive
+                      ? 'bg-indigo-500/15 text-indigo-400'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'
-                  }`}
+                    }`}
                 >
                   <span className={`transition-colors ${isActive ? 'text-indigo-400' : 'group-hover:text-white'}`}>
                     {item.icon}
                   </span>
                   {sidebarOpen && (
-                    <motion.span 
+                    <motion.span
                       initial={{ opacity: 0, x: -5 }}
                       animate={{ opacity: 1, x: 0 }}
                       className="font-bold text-[15px]"
@@ -482,7 +478,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
                     </motion.span>
                   )}
                   {isActive && (
-                    <motion.div 
+                    <motion.div
                       layoutId="active-indicator"
                       className="absolute left-0 w-1 h-6 bg-indigo-500 rounded-r-full"
                     />
@@ -501,7 +497,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
             {sidebarOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} className="mx-auto" />}
             {sidebarOpen && <span className="font-bold text-xs uppercase tracking-widest opacity-60">Collapse</span>}
           </button>
-          
+
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-4 p-3.5 rounded-xl text-red-400/80 hover:text-red-400 hover:bg-red-500/10 transition-all"
@@ -513,17 +509,16 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
       </motion.aside>
 
       {/* Main Content Area */}
-      <main 
+      <main
         className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'lg:ml-[280px]' : 'lg:ml-[88px]'} min-h-screen flex flex-col`}
       >
         {/* Navbar */}
-        <header 
-          className={`sticky top-0 z-40 transition-all duration-300 px-6 lg:px-10 h-20 flex items-center justify-between ${
-            isScrolled ? 'bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm' : 'bg-transparent'
-          }`}
+        <header
+          className={`sticky top-0 z-40 transition-all duration-300 px-6 lg:px-10 h-20 flex items-center justify-between ${isScrolled ? 'bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm' : 'bg-transparent'
+            }`}
         >
           <div className="flex items-center gap-4 lg:gap-6">
-            <button 
+            <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
             >
@@ -532,8 +527,8 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
             <div className="flex flex-col">
               <h1 className="text-xl lg:text-2xl font-black text-slate-900 tracking-tight leading-none">{title}</h1>
               <div className="flex items-center gap-2 mt-1.5">
-                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active System: {userRole}</p>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active System: {userRole}</p>
               </div>
             </div>
           </div>
@@ -542,9 +537,9 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
             {/* Search */}
             <div className="hidden md:flex relative group">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
-              <input 
-                type="text" 
-                placeholder="Universal Search..." 
+              <input
+                type="text"
+                placeholder="Universal Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="bg-white border-2 border-slate-100 rounded-2xl py-2.5 pl-12 pr-6 w-64 lg:w-96 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all shadow-sm"
@@ -554,7 +549,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
             {/* Actions */}
             <div className="flex items-center gap-4">
               {/* Export Trigger */}
-              <button 
+              <button
                 onClick={() => setIsExportOpen(true)}
                 className="hidden sm:flex items-center gap-2 px-5 py-2.5 bg-indigo-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-100 group"
               >
@@ -563,17 +558,17 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
               </button>
 
               <div className="relative">
-                <button 
+                <button
                   onClick={() => setShowNotifications(!showNotifications)}
                   className="relative p-3 text-slate-500 hover:bg-white hover:text-slate-900 rounded-2xl transition-all shadow-sm border border-slate-100 bg-white"
                 >
                   <Bell size={20} />
                   <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white"></span>
                 </button>
-                
+
                 <AnimatePresence>
                   {showNotifications && (
-                    <motion.div 
+                    <motion.div
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -584,17 +579,17 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
                         <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full uppercase tracking-widest">3 New</span>
                       </div>
                       <div className="py-2">
-                        {[1,2,3].map(n => (
+                        {[1, 2, 3].map(n => (
                           <div key={n} className="p-4 hover:bg-slate-50 rounded-2xl transition-colors cursor-pointer group">
-                             <div className="flex gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
-                                   <Zap size={18} />
-                                </div>
-                                <div className="flex-1">
-                                   <p className="text-sm font-bold text-slate-900">Shift Pattern Optimized</p>
-                                   <p className="text-xs text-slate-500 font-medium">AI completed weekly rotation.</p>
-                                </div>
-                             </div>
+                            <div className="flex gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                                <Zap size={18} />
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-sm font-bold text-slate-900">Shift Pattern Optimized</p>
+                                <p className="text-xs text-slate-500 font-medium">AI completed weekly rotation.</p>
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -602,11 +597,11 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
                   )}
                 </AnimatePresence>
               </div>
-              
+
               <div className="h-8 w-[2px] bg-slate-200/60 mx-1 hidden sm:block"></div>
 
               <div className="relative">
-                <button 
+                <button
                   onClick={() => setShowProfile(!showProfile)}
                   className="flex items-center gap-3 pl-1 pr-1 sm:pr-4 py-1 hover:bg-white rounded-2xl transition-all group border border-transparent hover:border-slate-100 hover:shadow-sm"
                 >
@@ -621,7 +616,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
 
                 <AnimatePresence>
                   {showProfile && (
-                    <motion.div 
+                    <motion.div
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -663,7 +658,7 @@ export const AlertPanel = ({ title, message, type = 'info' }) => {
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
       className={`p-6 rounded-[2rem] border-2 ${styles[type]} mb-10 flex items-start gap-5 shadow-xl shadow-black/5`}
@@ -680,17 +675,20 @@ export const AlertPanel = ({ title, message, type = 'info' }) => {
 };
 
 export const ShiftDisplay = ({ schedule, onUpdate }) => {
-  const shiftNames = schedule && typeof schedule === 'object' && schedule.shifts ? Object.keys(schedule.shifts) : [];
-  
+  const shiftNames = schedule && typeof schedule === 'object' && schedule.shifts
+    ? Object.keys(schedule.shifts) : [];
+
+  const [activeTab, setActiveTab] = useState('saved');       // 'new' | 'saved'
   const [activeShiftFilter, setActiveShiftFilter] = useState('All Shifts');
   const [roleFilter, setRoleFilter] = useState('All Roles');
   const [weekFilter, setWeekFilter] = useState('All Weeks');
   const [showOTOnly, setShowOTOnly] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const [allRoles, setAllRoles] = useState([]);
+  const [expandedWeeks, setExpandedWeeks] = useState({});
+  const [savedCount, setSavedCount] = useState(4);
 
   useEffect(() => {
-    // Fetch all roles from employees to populate the filter
     const fetchRoles = async () => {
       try {
         const token = localStorage.getItem('token');
@@ -698,310 +696,380 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
         const res = await axios.get('http://127.0.0.1:8000/employees', {
           headers: { Authorization: `Bearer ${token}` }
         });
-        const roles = [...new Set(res.data.map(e => e.role || 'Personnel'))].filter(Boolean);
+        const roles = [...new Set(res.data.map(e => e.role || 'Staff'))].filter(Boolean).sort();
         setAllRoles(roles);
-      } catch (err) {
-        console.error("Error fetching roles", err);
-      }
+      } catch (err) { console.error('Error fetching roles', err); }
     };
     fetchRoles();
   }, []);
 
-  if (!schedule || typeof schedule !== 'object') return (
-    <div className="w-full py-32 rounded-[3rem] bg-white border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-6">
-      <div className="w-20 h-20 rounded-[2rem] bg-slate-50 flex items-center justify-center text-slate-300 animate-pulse">
-        <Zap size={40} />
-      </div>
-      <p className="text-slate-400 font-black tracking-[0.2em] uppercase text-sm animate-pulse">Initializing AI Core...</p>
-    </div>
-  );
-
-  const weeklyOffs = Array.isArray(schedule.weekly_off) ? schedule.weekly_off : [];
-  
-  // Aggregate and filter employees
+  // Aggregate all assigned employees
   let allAssigned = [];
   if (activeShiftFilter === 'All Shifts') {
     shiftNames.forEach(s => {
-      if (schedule.shifts[s] && Array.isArray(schedule.shifts[s].employees)) {
-        allAssigned = [...allAssigned, ...schedule.shifts[s].employees.map(e => ({...e, shiftName: s}))];
+      if (schedule?.shifts[s] && Array.isArray(schedule.shifts[s].employees)) {
+        allAssigned = [...allAssigned, ...schedule.shifts[s].employees.map(e => ({ ...e, shiftName: s }))];
       }
     });
   } else {
-    const sData = schedule.shifts[activeShiftFilter];
+    const sData = schedule?.shifts[activeShiftFilter];
     if (sData && Array.isArray(sData.employees)) {
-      allAssigned = sData.employees.map(e => ({...e, shiftName: activeShiftFilter}));
+      allAssigned = sData.employees.map(e => ({ ...e, shiftName: activeShiftFilter }));
     }
   }
 
-  // Extract unique roles for the dropdown as fallback
-  const uniqueRoles = [...new Set(allAssigned.map(e => e.role || 'Personnel'))].filter(Boolean);
-  const displayRoles = allRoles.length > 0 ? allRoles : uniqueRoles;
+  const uniqueRoles = [...new Set(allAssigned.map(e => e.role).filter(Boolean))];
+  const displayRoles = [...new Set([...allRoles, ...uniqueRoles])].filter(Boolean).sort();
 
-  // Apply filters
+  // Filter employees
   const assigned = allAssigned.filter(emp => {
-    if (roleFilter !== 'All Roles' && (emp.role || 'Personnel') !== roleFilter) return false;
-    if (searchFilter && !emp.name?.toLowerCase().includes(searchFilter.toLowerCase()) && !emp.emp_id?.toLowerCase().includes(searchFilter.toLowerCase())) return false;
-    // OT filter implementation would go here if OT data was in the object
-    if (showOTOnly && !emp.is_overtime) return false; 
+    if (roleFilter !== 'All Roles' && (emp.role || 'Staff') !== roleFilter) return false;
+    if (searchFilter && !emp.name?.toLowerCase().includes(searchFilter.toLowerCase()) &&
+        !emp.emp_id?.toLowerCase().includes(searchFilter.toLowerCase())) return false;
+    if (showOTOnly && !emp.is_overtime) return false;
     return true;
   });
 
+  // Build 4 weeks of data from assigned employees
+  const weeks = [1, 2, 3, 4];
+  const employeesPerWeek = Math.ceil(assigned.length / 4) || 1;
+  const weekData = weeks.map((w, i) => ({
+    week: w,
+    employees: assigned.slice(i * employeesPerWeek, (i + 1) * employeesPerWeek),
+  }));
+
+  const toggleWeek = (w) => setExpandedWeeks(prev => ({ ...prev, [w]: !prev[w] }));
+
+  const handleGenerateNew = async () => {
+    if (!window.confirm('Regenerate entire AI schedule for today? This will clear manual overrides.')) return;
+    const token = localStorage.getItem('token');
+    try {
+      await axios.post('http://127.0.0.1:8000/generate-schedule',
+        { date: new Date().toISOString().split('T')[0] },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSavedCount(prev => Math.min(prev + 1, 9));
+      setActiveTab('saved');
+      onUpdate && onUpdate();
+    } catch (e) { alert('Error regenerating schedule'); }
+  };
+
   return (
-    <div className="space-y-10">
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-[2rem] border border-slate-200/60 shadow-xl shadow-black/5">
-        
+    <div style={{ backgroundColor: '#ffffff', minHeight: '100%', borderRadius: '1.5rem', padding: '2.5rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
+
+      {/* Header */}
+      <div className="mb-8">
+        <h1 style={{ color: '#0f172a', fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.03em', marginBottom: '0.35rem' }}>
+          Schedule
+        </h1>
+        <p style={{ color: '#64748b', fontSize: '0.875rem', fontWeight: 500 }}>
+          Generate and view AI-optimised shift plans · Click any employee to apply leave
+        </p>
+      </div>
+
+      {/* Tab Bar */}
+      <div className="flex items-center gap-3 mb-8">
+        <button
+          onClick={handleGenerateNew}
+          style={{
+            padding: '0.55rem 1.25rem',
+            borderRadius: '0.6rem',
+            fontSize: '0.875rem',
+            fontWeight: 700,
+            border: '1px solid #e2e8f0',
+            background: activeTab === 'new' ? '#f1f5f9' : 'transparent',
+            color: activeTab === 'new' ? '#0f172a' : '#64748b',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+        >
+          Generate New
+        </button>
+        <button
+          onClick={() => setActiveTab('saved')}
+          style={{
+            padding: '0.55rem 1.25rem',
+            borderRadius: '0.6rem',
+            fontSize: '0.875rem',
+            fontWeight: 700,
+            background: activeTab === 'saved' ? '#7c3aed' : 'transparent',
+            color: activeTab === 'saved' ? '#fff' : '#64748b',
+            border: activeTab === 'saved' ? 'none' : '1px solid #e2e8f0',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: activeTab === 'saved' ? '0 4px 12px rgba(124,58,237,0.3)' : 'none',
+          }}
+        >
+          Saved Schedules ({savedCount})
+        </button>
+      </div>
+
+      {/* Filter Bar */}
+      <div style={{
+        background: '#f8fafc',
+        border: '1px solid #e2e8f0',
+        borderRadius: '1rem',
+        padding: '1rem 1.25rem',
+        marginBottom: '1.5rem',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.75rem',
+        flexWrap: 'wrap',
+      }}>
         {/* Search */}
-        <div className="relative flex-1 min-w-[200px] lg:max-w-md">
-          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Search employee..." 
+        <div style={{ position: 'relative', flex: 1, minWidth: '200px', maxWidth: '380px' }}>
+          <Search size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+          <input
+            type="text"
+            placeholder="Search employee..."
             value={searchFilter}
-            onChange={(e) => setSearchFilter(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-400"
+            onChange={e => setSearchFilter(e.target.value)}
+            style={{
+              width: '100%',
+              paddingLeft: '2.25rem',
+              paddingRight: '1rem',
+              paddingTop: '0.6rem',
+              paddingBottom: '0.6rem',
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '0.6rem',
+              color: '#0f172a',
+              fontSize: '0.875rem',
+              outline: 'none',
+            }}
           />
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          <Filter size={20} className="text-slate-400 mr-1 hidden sm:block" />
-          
-          <select 
-            value={weekFilter} 
-            onChange={(e) => setWeekFilter(e.target.value)}
-            className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[position:right_12px_center] bg-no-repeat transition-all hover:bg-slate-100"
-          >
-            <option value="All Weeks">All Weeks</option>
-            <option value="Week 1">Week 1</option>
-            <option value="Week 2">Week 2</option>
-            <option value="Week 3">Week 3</option>
-            <option value="Week 4">Week 4</option>
-          </select>
+        {/* Filter icon */}
+        <Filter size={18} style={{ color: '#94a3b8', marginLeft: '0.25rem' }} />
 
-          <select 
-            value={activeShiftFilter} 
-            onChange={(e) => setActiveShiftFilter(e.target.value)}
-            className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[position:right_12px_center] bg-no-repeat transition-all hover:bg-slate-100"
-          >
-            <option value="All Shifts">All Shifts</option>
-            {shiftNames.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+        {/* Week filter */}
+        <select
+          value={weekFilter}
+          onChange={e => setWeekFilter(e.target.value)}
+          style={selectStyle}
+        >
+          <option value="All Weeks">All Weeks</option>
+          <option value="Week 1">Week 1</option>
+          <option value="Week 2">Week 2</option>
+          <option value="Week 3">Week 3</option>
+          <option value="Week 4">Week 4</option>
+        </select>
 
-          <select 
-            value={roleFilter} 
-            onChange={(e) => setRoleFilter(e.target.value)}
-            className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[position:right_12px_center] bg-no-repeat transition-all hover:bg-slate-100"
-          >
-            <option value="All Roles">All Roles</option>
-            {displayRoles.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
+        {/* Shift filter */}
+        <select
+          value={activeShiftFilter}
+          onChange={e => setActiveShiftFilter(e.target.value)}
+          style={selectStyle}
+        >
+          <option value="All Shifts">All Shifts</option>
+          {shiftNames.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
 
-          <button 
-            onClick={() => setShowOTOnly(!showOTOnly)}
-            className={`px-4 py-3 rounded-[1.5rem] text-sm font-bold border transition-all flex items-center gap-2 ${
-              showOTOnly 
-                ? 'bg-indigo-500 text-white border-indigo-500 shadow-md shadow-indigo-200' 
-                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-            }`}
-          >
-            <Clock size={16} /> OT
-          </button>
-        </div>
-        
-        <div className="flex items-center gap-3 ml-auto">
-          <button 
-            onClick={async () => {
-              if(!window.confirm("Regenerate entire AI schedule for today? This will clear manual overrides.")) return;
-              const token = localStorage.getItem('token');
-              try {
-                await axios.post('http://127.0.0.1:8000/generate-schedule', { date: new Date().toISOString().split('T')[0] }, {
-                  headers: { Authorization: `Bearer ${token}` }
-                });
-                onUpdate && onUpdate();
-              } catch(e) { alert("Error regenerating schedule"); }
-            }}
-            className="flex items-center gap-2 px-5 py-3 rounded-[1.5rem] bg-indigo-500 text-white text-sm font-black hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-200 group"
-          >
-            <Sparkles size={16} className="group-hover:rotate-12 transition-transform" />
-            Regenerate AI
-          </button>
-        </div>
+        {/* Role filter */}
+        <select
+          value={roleFilter}
+          onChange={e => setRoleFilter(e.target.value)}
+          style={selectStyle}
+        >
+          <option value="All Roles">All Roles</option>
+          {displayRoles.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+
+        {/* OT toggle */}
+        <button
+          onClick={() => setShowOTOnly(!showOTOnly)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            padding: '0.55rem 1rem',
+            borderRadius: '0.6rem',
+            fontSize: '0.875rem',
+            fontWeight: 700,
+            border: '1px solid #e2e8f0',
+            background: showOTOnly ? '#7c3aed' : '#ffffff',
+            color: showOTOnly ? '#fff' : '#64748b',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+        >
+          <Clock size={14} /> OT
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-10">
-        {/* Weekly Off Card */}
-        <motion.div 
-          layout
-          className="relative overflow-hidden group"
-        >
-          <div className="bg-white border border-slate-100 rounded-[3rem] p-10 lg:p-14 shadow-2xl shadow-orange-900/5 relative z-10">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-12">
-              <div className="flex items-center gap-6">
-                <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-orange-400 to-rose-500 flex items-center justify-center text-white shadow-2xl shadow-orange-200 ring-8 ring-orange-50">
-                  <Clock size={32} />
-                </div>
-                <div>
-                  <h3 className="text-3xl font-black text-slate-900 tracking-tight">System Rest Days</h3>
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className="px-3 py-1 rounded-full bg-orange-100 text-orange-600 text-[10px] font-black uppercase tracking-widest border border-orange-200">
-                      Rotating Weekly Off
-                    </span>
-                    <span className="text-sm font-bold text-slate-500">{weeklyOffs.length} Personnel resting today</span>
-                  </div>
-                </div>
-              </div>
-              
-              <button 
-                onClick={async () => {
-                  if (weeklyOffs.length === 0) {
-                    if(!window.confirm("Auto-assign weekly rest days for all employees and regenerate schedule?")) return;
-                    const token = localStorage.getItem('token');
-                    try {
-                      await axios.post('http://127.0.0.1:8000/auto-assign-weekly-offs', {}, {
-                        headers: { Authorization: `Bearer ${token}` }
-                      });
-                      onUpdate && onUpdate();
-                    } catch(e) { 
-                      alert("Error assigning weekly offs: " + (e.response?.data?.detail || e.message)); 
-                    }
-                  } else {
-                    alert("Schedule broadcasted successfully to all employees via Email/SMS!");
-                  }
-                }}
-                className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-slate-900 text-white text-sm font-black hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 group/btn"
-              >
-                {weeklyOffs.length === 0 ? "Auto-Assign Rest Days" : "Broadcast Schedule"}
-                <ArrowRight size={18} className="group-hover/btn:translate-x-1 transition-transform" />
-              </button>
-            </div>
+      {/* Week Rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {weekData.map(({ week, employees: weekEmployees }) => {
+          // Apply weekFilter
+          if (weekFilter !== 'All Weeks' && weekFilter !== `Week ${week}`) return null;
+          const isOpen = !!expandedWeeks[week];
 
-            <div className="flex overflow-x-auto gap-5 pb-6 px-1 custom-scrollbar snap-x snap-mandatory">
-              {weeklyOffs.length > 0 ? (
-                weeklyOffs.map((emp, i) => (
-                  <motion.div 
-                    key={emp?.id || i}
-                    initial={{ opacity: 0, scale: 0.9, x: 20 }}
-                    animate={{ opacity: 1, scale: 1, x: 0 }}
-                    transition={{ delay: i * 0.04 }}
-                    className="flex-shrink-0 flex items-center gap-4 px-6 py-4 bg-slate-50 border-2 border-transparent hover:border-orange-200 hover:bg-white rounded-[1.5rem] transition-all group/chip cursor-default shadow-sm hover:shadow-xl hover:shadow-orange-900/5 snap-start"
-                  >
-                    <div className="w-11 h-11 rounded-xl bg-white text-orange-500 flex items-center justify-center font-black text-sm border border-slate-100 group-hover/chip:bg-orange-500 group-hover/chip:text-white transition-all shadow-sm">
-                      {(emp?.name || '?').charAt(0)}
+          return (
+            <div key={week} style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '0.85rem',
+              overflow: 'hidden',
+            }}>
+              {/* Row Header */}
+              <button
+                onClick={() => toggleWeek(week)}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '1rem 1.25rem',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#0f172a',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <CalendarDays size={18} style={{ color: '#7c3aed' }} />
+                  <span style={{ fontWeight: 800, fontSize: '0.9rem', letterSpacing: '0.05em', color: '#0f172a' }}>
+                    WEEK {week}
+                  </span>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>
+                    7 days · {weekEmployees.length} assigned
+                  </span>
+                </div>
+                <ChevronDown
+                  size={18}
+                  style={{
+                    color: '#64748b',
+                    transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.25s',
+                  }}
+                />
+              </button>
+
+              {/* Expanded Employee Grid */}
+              {isOpen && (
+                <div style={{ padding: '0 1.25rem 1.25rem 1.25rem' }}>
+                  {weekEmployees.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b', fontSize: '0.875rem' }}>
+                      No employees found for this week with the current filters.
                     </div>
-                    <div>
-                      <p className="text-[15px] font-black text-slate-900 leading-none group-hover/chip:text-orange-600 transition-colors">{emp?.name || 'Unknown'}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] mt-1.5">{emp?.emp_id || 'N/A'}</p>
+                  ) : (
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                      gap: '0.75rem',
+                    }}>
+                      {weekEmployees.map((item, idx) => {
+                        if (!item || typeof item !== 'object') return null;
+                        return (
+                          <motion.div
+                            key={item?.emp_id || idx}
+                            initial={{ opacity: 0, y: 16 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: idx * 0.03 }}
+                            style={{
+                              background: '#ffffff',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '0.85rem',
+                              padding: '1.1rem 1.25rem',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
+                            }}
+                            whileHover={{ background: '#f5f3ff', borderColor: '#c4b5fd' }}
+                            onClick={async () => {
+                              if (!window.confirm(`Mark ${item?.name || 'employee'} as on leave today and assign an AI replacement?`)) return;
+                              const token = localStorage.getItem('token');
+                              try {
+                                await axios.post('http://127.0.0.1:8000/apply-leave', {
+                                  employee_name: item?.name,
+                                  date: new Date().toISOString().split('T')[0]
+                                }, { headers: { Authorization: `Bearer ${token}` } });
+                                onUpdate && onUpdate();
+                              } catch (e) {
+                                alert(e?.response?.data?.detail || 'Error assigning replacement');
+                              }
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                              <div style={{
+                                width: '38px', height: '38px', borderRadius: '0.55rem',
+                                background: '#f5f3ff',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '1rem', fontWeight: 900, color: '#7c3aed',
+                                flexShrink: 0,
+                                border: '1px solid #ddd6fe',
+                              }}>
+                                {(item?.name || '?').charAt(0)}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {item?.name || 'Unknown'}
+                                </div>
+                                <div style={{ color: '#7c3aed', fontSize: '0.75rem', fontWeight: 700 }}>
+                                  {item?.emp_id || 'N/A'}
+                                </div>
+                              </div>
+                              {item?.shiftName && (
+                                <span style={{
+                                  padding: '0.2rem 0.6rem',
+                                  borderRadius: '999px',
+                                  background: '#f1f5f9',
+                                  color: '#475569',
+                                  fontSize: '0.65rem',
+                                  fontWeight: 800,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.08em',
+                                  whiteSpace: 'nowrap',
+                                  border: '1px solid #e2e8f0',
+                                }}>
+                                  {item.shiftName}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                                <span style={{ color: '#64748b', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                                  {item?.role || 'Staff'}
+                                </span>
+                              </div>
+                              <span style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600 }}>
+                                {item?.start_time || '--'} – {item?.end_time || '--'}
+                              </span>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
                     </div>
-                  </motion.div>
-                ))
-              ) : (
-                <div className="w-full py-12 text-center border-2 border-dashed border-slate-200 rounded-[2rem] bg-slate-50/50 flex flex-col items-center justify-center gap-2">
-                  <div className="text-slate-400 font-black italic tracking-widest uppercase text-sm">
-                    CRITICAL: NO PERSONNEL RESTING TODAY
-                  </div>
-                  <div className="text-slate-400 text-xs font-medium">
-                    Click "Auto-Assign Rest Days" above to let AI distribute weekly offs across your workforce.
-                  </div>
+                  )}
                 </div>
               )}
             </div>
-          </div>
-        </motion.div>
-
-        {/* Assigned Personnel Grid */}
-        <div>
-          <div className="flex items-center justify-between mb-8 px-4">
-             <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center text-white">
-                   <Users size={18} />
-                </div>
-                <h3 className="text-xl font-black text-slate-900 tracking-tight">Deployed Force</h3>
-             </div>
-             <button className="text-sm font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1">
-                View Allocation Report <ChevronRight size={16} />
-             </button>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-8">
-            {assigned.map((item, idx) => {
-              if (!item || typeof item !== 'object') return null;
-              return (
-                <motion.div
-                  key={item?.emp_id || idx}
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.03 }}
-                  className="group bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-black/[0.02] hover:shadow-[0_32px_64px_-12px_rgba(15,23,42,0.12)] hover:-translate-y-3 transition-all duration-700"
-                >
-                  <div className="flex items-start justify-between mb-8">
-                    <div className="flex items-center gap-5">
-                      <div className="w-16 h-16 rounded-[1.5rem] bg-slate-50 border border-slate-100 flex items-center justify-center group-hover:scale-110 group-hover:rotate-3 transition-all duration-700 relative overflow-hidden ring-4 ring-slate-50/50">
-                        <User size={32} className="text-slate-300 group-hover:text-indigo-500 transition-colors duration-500" />
-                        <div className="absolute inset-0 bg-indigo-500 opacity-0 group-hover:opacity-5 transition-opacity"></div>
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-3">
-                          <h4 className="text-xl font-black text-slate-900 leading-tight tracking-tight group-hover:text-indigo-600 transition-colors duration-500">{item?.name || 'Unknown'}</h4>
-                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest">{item?.emp_id || 'N/A'}</span>
-                          {item?.shiftName && (
-                            <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-500 text-[9px] font-black uppercase tracking-widest border border-indigo-100">{item.shiftName}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1.5">
-                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                             {Array.isArray(item?.skills) ? item.skills.join(', ') : (typeof item?.skills === 'string' ? item.skills : (item?.role || 'Personnel'))}
-                           </p>
-                        </div>
-                      </div>
-                    </div>
-                    <button className="text-slate-300 hover:text-slate-900 transition-colors p-1">
-                       <MoreVertical size={20} />
-                    </button>
-                  </div>
-
-                  <div className="space-y-5">
-                    <div className="flex items-center justify-between p-5 bg-slate-50 rounded-[1.5rem] group-hover:bg-indigo-50 group-hover:border-indigo-100 border border-transparent transition-all duration-500">
-                      <div className="flex items-center gap-4">
-                        <div className="p-2.5 rounded-xl bg-white shadow-sm text-indigo-500 group-hover:scale-110 transition-transform">
-                          <Clock size={18} />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Deployment Time</span>
-                          <span className="text-sm font-black text-slate-900">{item?.start_time || '--'} - {item?.end_time || '--'}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <button 
-                      onClick={async () => {
-                        if(!window.confirm(`Mark ${item?.name || 'employee'} as on leave for today and assign an AI replacement?`)) return;
-                        const token = localStorage.getItem('token');
-                        try {
-                          await axios.post('http://127.0.0.1:8000/apply-leave', { 
-                            employee_name: item?.name, 
-                            date: new Date().toISOString().split('T')[0] 
-                          }, {
-                            headers: { Authorization: `Bearer ${token}` }
-                          });
-                          onUpdate && onUpdate();
-                        } catch(e) { 
-                          alert(e?.response?.data?.detail || "Error assigning replacement"); 
-                        }
-                      }}
-                      className="w-full py-4 rounded-[1.5rem] text-white bg-indigo-600 border-2 border-indigo-600 text-sm font-black hover:bg-indigo-700 hover:border-indigo-700 transition-all duration-500 shadow-xl shadow-indigo-100 hover:shadow-indigo-900/20"
-                    >
-                      Assign Replacement
-                    </button>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
+          );
+        })}
       </div>
     </div>
   );
 };
 
+const selectStyle = {
+  padding: '0.55rem 2rem 0.55rem 0.85rem',
+  borderRadius: '0.6rem',
+  fontSize: '0.875rem',
+  fontWeight: 700,
+  background: '#ffffff',
+  border: '1px solid #e2e8f0',
+  color: '#0f172a',
+  cursor: 'pointer',
+  outline: 'none',
+  appearance: 'none',
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='4 6 8 10 12 6'/%3E%3C/svg%3E")`,
+  backgroundRepeat: 'no-repeat',
+  backgroundPosition: 'right 0.5rem center',
+  backgroundSize: '16px 16px',
+};
+
 export default DashboardLayout;
+
+

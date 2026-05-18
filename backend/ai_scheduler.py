@@ -42,7 +42,8 @@ def auto_assign_weekly_offs(db: Session):
 # ─── Column name aliases (extremely permissive) ─────────────────────────────
 COL_EMP_ID     = ['employee id', 'emp id', 'id', 'empid', 'staff id', 'eid', 'code', 'employee #', 'employee_id']
 COL_NAME       = ['name', 'employee name', 'full name', 'emp name', 'staff name', 'person', 'fullname']
-COL_SKILLS     = ['skills', 'qualifications', 'skillset', 'ability', 'roles', 'skill', 'dept']
+COL_SKILLS     = ['skills', 'qualifications', 'skillset', 'ability', 'skill', 'dept']
+COL_ROLE       = ['role in department', 'role', 'designation', 'job title', 'position', 'roles', 'category']
 COL_PREF_SHIFT = ['preferred shift', 'preference', 'shift preference', 'preferred', 'preferred_shift', 'choice']
 COL_MAX_HOURS  = ['max hours', 'hours limit', 'hours', 'max hrs', 'max_hours', 'limit']
 COL_SHIFT_NAME = ['shift name', 'shift', 'shift_name', 'typename', 'slot']
@@ -89,11 +90,13 @@ def parse_combined_excel(file_path: str, db: Session) -> str:
                 name   = str(name if name else f"Employee {emp_id}").strip()
 
                 raw_skills = _get(row_dict, COL_SKILLS)
+                role       = _get(row_dict, COL_ROLE)
                 pref_shift = _get(row_dict, COL_PREF_SHIFT)
                 max_hrs    = _get(row_dict, COL_MAX_HOURS)
                 weekly_off = _get(row_dict, COL_WEEKLY_OFF)
 
                 skills     = [s.strip() for s in str(raw_skills).split(',')] if raw_skills else []
+                role       = str(role).strip() if role else 'Staff'
                 
                 try:
                     max_hrs = int(float(str(max_hrs).strip())) if max_hrs else 40
@@ -107,13 +110,14 @@ def parse_combined_excel(file_path: str, db: Session) -> str:
                 if existing:
                     existing.name            = name
                     existing.skills          = skills
+                    existing.role            = role
                     existing.preferred_shift = pref_shift
                     existing.max_hours       = max_hrs
                     existing.weekly_off      = weekly_off
                     updated += 1
                 else:
                     db.add(Employee(
-                        emp_id=emp_id, name=name, skills=skills,
+                        emp_id=emp_id, name=name, skills=skills, role=role,
                         preferred_shift=pref_shift, max_hours=max_hrs,
                         weekly_off=weekly_off
                     ))
