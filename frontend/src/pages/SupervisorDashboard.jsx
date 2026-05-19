@@ -29,9 +29,7 @@ export default function SupervisorDashboard() {
 
   useEffect(() => {
     fetchSchedule();
-    // Real-time updates: Poll for changes every 10 seconds
-    const interval = setInterval(fetchSchedule, 10000);
-    return () => clearInterval(interval);
+    // Fetch once on mount — no polling loop
   }, []);
 
   const handleApplyLeave = async (e) => {

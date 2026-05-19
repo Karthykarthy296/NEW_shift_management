@@ -32,50 +32,47 @@ export default function NewDashboard() {
   const username = localStorage.getItem('username') || 'User';
   const today = new Date().toISOString().split('T')[0];
 
-  const getToken = () => {
+
+  useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/login');
-      return null;
+      return;
     }
-    return token;
-  };
-
-  useEffect(() => {
-    const token = getToken();
-    if (!token) return;
 
     const fetchData = async () => {
       try {
+        const headers = { Authorization: `Bearer ${token}` };
+
         // Fetch summary
-        const summaryRes = await axios.get(`${API_URL}/dashboard-summary`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const summaryRes = await axios.get(`${API_URL}/dashboard-summary`, { headers });
         setSummary(summaryRes.data);
 
         // Fetch schedule
-        const scheduleRes = await axios.get(`${API_URL}/get-schedule?date=${today}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const scheduleRes = await axios.get(`${API_URL}/get-schedule?date=${today}`, { headers });
         setSchedule(scheduleRes.data);
 
         // Fetch leaves
-        const leavesRes = await axios.get(`${API_URL}/leaves`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const leavesRes = await axios.get(`${API_URL}/leaves`, { headers });
         setLeaves(leavesRes.data || []);
 
         // Fetch schedules generated count this month
         try {
-          const countRes = await axios.get(`${API_URL}/schedules-generated-count`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          const countRes = await axios.get(`${API_URL}/schedules-generated-count`, { headers });
           setSchedulesGenerated(countRes.data?.count ?? 1);
         } catch {
           setSchedulesGenerated(1);
         }
+
+        // One-time check of AI generation status (no polling loop)
+        try {
+          const statusRes = await axios.get(`${API_URL}/schedule-generation-status`);
+          setIsGenerating(statusRes.data?.is_generating ?? false);
+        } catch {
+          setIsGenerating(false);
+        }
       } catch (error) {
-        console.error('Error fetching data:', error);
+        console.error('Error fetching dashboard data:', error);
         if (error.response?.status === 401) {
           navigate('/login');
         }
@@ -83,29 +80,7 @@ export default function NewDashboard() {
     };
 
     fetchData();
-
-    // Background polling for AI schedule generation status
-    let wasGenerating = false;
-    const pollInterval = setInterval(async () => {
-      try {
-        const statusRes = await axios.get(`${API_URL}/schedule-generation-status`);
-        const currentGenerating = statusRes.data.is_generating;
-        
-        setIsGenerating(currentGenerating);
-        
-        // If it finished generating, trigger auto-refresh!
-        if (wasGenerating && !currentGenerating) {
-          console.log('[Dashboard Auto-Refresh] AI Generation completed! Reloading data...');
-          fetchData();
-        }
-        
-        wasGenerating = currentGenerating;
-      } catch (err) {
-        console.error('Error polling schedule status:', err);
-      }
-    }, 3000);
-
-    return () => clearInterval(pollInterval);
+    // Empty dependency array: runs ONCE on mount only. No polling, no re-fetch loops.
   }, []);
 
   // Calculate stats from actual backend data

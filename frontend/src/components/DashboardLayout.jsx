@@ -306,6 +306,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
     { icon: <Calendar size={20} />, label: 'Shifts', path: `/${roleSlug}/shifts`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <ClipboardList size={20} />, label: 'Leaves', path: `/${roleSlug}/leaves`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <RefreshCw size={20} />, label: 'Weekly Off Swap', path: `/${roleSlug}/weekly-off-swap`, roles: ['admin', 'manager', 'supervisor'] },
+    { icon: <CalendarRange size={20} />, label: 'Weekly Off', path: `/${roleSlug}/weekly-off`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <Upload size={20} />, label: 'Upload', path: `/${roleSlug}/upload`, roles: ['admin', 'manager'] },
     {
       icon: <BarChart3 size={20} />,
@@ -675,380 +676,556 @@ export const AlertPanel = ({ title, message, type = 'info' }) => {
 };
 
 export const ShiftDisplay = ({ schedule, onUpdate }) => {
-  const shiftNames = schedule && typeof schedule === 'object' && schedule.shifts
-    ? Object.keys(schedule.shifts) : [];
+  const [scheduleData, setScheduleData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedWeek, setSelectedWeek] = useState("1");
+  const [selectedDay, setSelectedDay] = useState("All");
+  const [searchFilter, setSearchFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [roleFilter, setRoleFilter] = useState("All Roles");
+  const [deptFilter, setDeptFilter] = useState("All Depts");
+  const itemsPerPage = 20;
 
-  const [activeTab, setActiveTab] = useState('saved');       // 'new' | 'saved'
-  const [activeShiftFilter, setActiveShiftFilter] = useState('All Shifts');
-  const [roleFilter, setRoleFilter] = useState('All Roles');
-  const [weekFilter, setWeekFilter] = useState('All Weeks');
-  const [showOTOnly, setShowOTOnly] = useState(false);
-  const [searchFilter, setSearchFilter] = useState('');
-  const [allRoles, setAllRoles] = useState([]);
-  const [expandedWeeks, setExpandedWeeks] = useState({});
-  const [savedCount, setSavedCount] = useState(4);
+  const fetch4WeekSchedule = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('http://127.0.0.1:8000/get-4-week-schedule', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setScheduleData(res.data);
+    } catch (e) {
+      console.error("Error fetching 4-week schedule", e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchRoles = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) return;
-        const res = await axios.get('http://127.0.0.1:8000/employees', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const roles = [...new Set(res.data.map(e => e.role || 'Staff'))].filter(Boolean).sort();
-        setAllRoles(roles);
-      } catch (err) { console.error('Error fetching roles', err); }
-    };
-    fetchRoles();
-  }, []);
+    fetch4WeekSchedule();
+  }, [schedule]);
 
-  // Aggregate all assigned employees
-  let allAssigned = [];
-  if (activeShiftFilter === 'All Shifts') {
-    shiftNames.forEach(s => {
-      if (schedule?.shifts[s] && Array.isArray(schedule.shifts[s].employees)) {
-        allAssigned = [...allAssigned, ...schedule.shifts[s].employees.map(e => ({ ...e, shiftName: s }))];
-      }
-    });
-  } else {
-    const sData = schedule?.shifts[activeShiftFilter];
-    if (sData && Array.isArray(sData.employees)) {
-      allAssigned = sData.employees.map(e => ({ ...e, shiftName: activeShiftFilter }));
+  const handleGenerateNew = async () => {
+    if (!window.confirm('Regenerate entire AI 4-week schedule? This will balance Morning / Evening / Night shifts and rotate weekly offs fairly day-by-day across all 4 weeks.')) return;
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post('http://127.0.0.1:8000/generate-4-week-schedule', {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      alert('AI successfully generated 4-week schedule!');
+      fetch4WeekSchedule();
+      onUpdate && onUpdate();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Error generating 4-week schedule');
+      setLoading(false);
     }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px', gap: '1rem' }}>
+        <Loader2 className="animate-spin" size={48} style={{ color: '#7c3aed' }} />
+        <p style={{ color: '#64748b', fontWeight: 600, fontSize: '0.95rem' }}>Loading Enterprise Calendar Schedule...</p>
+      </div>
+    );
   }
 
-  const uniqueRoles = [...new Set(allAssigned.map(e => e.role).filter(Boolean))];
-  const displayRoles = [...new Set([...allRoles, ...uniqueRoles])].filter(Boolean).sort();
+  const weeks = scheduleData?.weeks || {};
+  const currentWeekData = weeks[selectedWeek] || { employees: [] };
+  const allEmployees = currentWeekData.employees || [];
 
-  // Filter employees
-  const assigned = allAssigned.filter(emp => {
-    if (roleFilter !== 'All Roles' && (emp.role || 'Staff') !== roleFilter) return false;
-    if (searchFilter && !emp.name?.toLowerCase().includes(searchFilter.toLowerCase()) &&
-        !emp.emp_id?.toLowerCase().includes(searchFilter.toLowerCase())) return false;
-    if (showOTOnly && !emp.is_overtime) return false;
+  // Get distinct roles and departments for filter
+  const distinctRoles = [...new Set(allEmployees.map(e => e.role).filter(Boolean))].sort();
+  const distinctDepts = [...new Set(allEmployees.map(e => e.department).filter(Boolean))].sort();
+
+  // Filter employees based on search, role, and dept
+  const filteredEmployees = allEmployees.filter(emp => {
+    if (searchFilter && !emp.name?.toLowerCase().includes(searchFilter.toLowerCase()) && !emp.emp_id?.toLowerCase().includes(searchFilter.toLowerCase())) return false;
+    if (roleFilter !== "All Roles" && emp.role !== roleFilter) return false;
+    if (deptFilter !== "All Depts" && emp.department !== deptFilter) return false;
     return true;
   });
 
-  // Build 4 weeks of data from assigned employees
-  const weeks = [1, 2, 3, 4];
-  const employeesPerWeek = Math.ceil(assigned.length / 4) || 1;
-  const weekData = weeks.map((w, i) => ({
-    week: w,
-    employees: assigned.slice(i * employeesPerWeek, (i + 1) * employeesPerWeek),
-  }));
+  const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-  const toggleWeek = (w) => setExpandedWeeks(prev => ({ ...prev, [w]: !prev[w] }));
-
-  const handleGenerateNew = async () => {
-    if (!window.confirm('Regenerate entire AI schedule for today? This will clear manual overrides.')) return;
-    const token = localStorage.getItem('token');
-    try {
-      await axios.post('http://127.0.0.1:8000/generate-schedule',
-        { date: new Date().toISOString().split('T')[0] },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setSavedCount(prev => Math.min(prev + 1, 9));
-      setActiveTab('saved');
-      onUpdate && onUpdate();
-    } catch (e) { alert('Error regenerating schedule'); }
+  // Count metrics for the selected week & day
+  const getDayCounts = (day) => {
+    let working = 0;
+    let resting = 0;
+    allEmployees.forEach(emp => {
+      if (emp.schedules && emp.schedules[day] === "WEEK OFF") {
+        resting++;
+      } else {
+        working++;
+      }
+    });
+    return { working, resting };
   };
+
+  // Shift styles
+  const getShiftBadgeStyle = (shiftName) => {
+    const base = {
+      padding: '0.35rem 0.75rem',
+      borderRadius: '999px',
+      fontSize: '0.75rem',
+      fontWeight: 800,
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: '95px',
+      border: '1px solid'
+    };
+    
+    switch (shiftName) {
+      case 'Morning':
+        return { ...base, background: '#e0f2fe', color: '#0369a1', borderColor: '#bae6fd' };
+      case 'Afternoon':
+        return { ...base, background: '#f0fdf4', color: '#166534', borderColor: '#bbf7d0' };
+      case 'Evening':
+        return { ...base, background: '#faf5ff', color: '#6b21a8', borderColor: '#e9d5ff' };
+      case 'Night':
+        return { ...base, background: '#f1f5f9', color: '#334155', borderColor: '#cbd5e1' };
+      case 'WEEK OFF':
+        return { ...base, background: '#fef3c7', color: '#d97706', borderColor: '#fde68a' };
+      default:
+        return { ...base, background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' };
+    }
+  };
+
+  // Pagination bounds
+  const totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
+  const paginatedEmployees = filteredEmployees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <div style={{ backgroundColor: '#ffffff', minHeight: '100%', borderRadius: '1.5rem', padding: '2.5rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
-
-      {/* Header */}
-      <div className="mb-8">
-        <h1 style={{ color: '#0f172a', fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.03em', marginBottom: '0.35rem' }}>
-          Schedule
-        </h1>
-        <p style={{ color: '#64748b', fontSize: '0.875rem', fontWeight: 500 }}>
-          Generate and view AI-optimised shift plans · Click any employee to apply leave
-        </p>
-      </div>
-
-      {/* Tab Bar */}
-      <div className="flex items-center gap-3 mb-8">
+      {/* Top Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', flexWrap: 'wrap', gap: '1.5rem' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+            <Sparkles size={24} style={{ color: '#7c3aed' }} />
+            <h1 style={{ color: '#0f172a', fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.03em', margin: 0 }}>
+              AI Calendar Scheduler
+            </h1>
+          </div>
+          <p style={{ color: '#64748b', fontSize: '0.9rem', fontWeight: 500 }}>
+            Enterprise 4-Week Rotational Shift and Weekly Off Management System
+          </p>
+        </div>
         <button
           onClick={handleGenerateNew}
           style={{
-            padding: '0.55rem 1.25rem',
-            borderRadius: '0.6rem',
-            fontSize: '0.875rem',
-            fontWeight: 700,
-            border: '1px solid #e2e8f0',
-            background: activeTab === 'new' ? '#f1f5f9' : 'transparent',
-            color: activeTab === 'new' ? '#0f172a' : '#64748b',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.75rem 1.5rem',
+            borderRadius: '0.75rem',
+            background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
+            color: '#ffffff',
+            fontWeight: 800,
+            fontSize: '0.9rem',
+            border: 'none',
             cursor: 'pointer',
-            transition: 'all 0.2s',
+            boxShadow: '0 4px 12px rgba(124, 58, 237, 0.3)',
+            transition: 'transform 0.2s, box-shadow 0.2s',
           }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(124, 58, 237, 0.4)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.3)'; }}
         >
-          Generate New
-        </button>
-        <button
-          onClick={() => setActiveTab('saved')}
-          style={{
-            padding: '0.55rem 1.25rem',
-            borderRadius: '0.6rem',
-            fontSize: '0.875rem',
-            fontWeight: 700,
-            background: activeTab === 'saved' ? '#7c3aed' : 'transparent',
-            color: activeTab === 'saved' ? '#fff' : '#64748b',
-            border: activeTab === 'saved' ? 'none' : '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            boxShadow: activeTab === 'saved' ? '0 4px 12px rgba(124,58,237,0.3)' : 'none',
-          }}
-        >
-          Saved Schedules ({savedCount})
+          <Sparkles size={16} />
+          Regenerate 4-Week AI Schedule
         </button>
       </div>
 
-      {/* Filter Bar */}
+      {/* Week Selector Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+        {["1", "2", "3", "4"].map(w => {
+          const isActive = selectedWeek === w;
+          const weekStartDate = weeks[w]?.start_date ? new Date(weeks[w].start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+          return (
+            <motion.button
+              key={w}
+              onClick={() => { setSelectedWeek(w); setCurrentPage(1); }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              style={{
+                padding: '1.25rem',
+                borderRadius: '1rem',
+                border: isActive ? '2px solid #7c3aed' : '1px solid #e2e8f0',
+                background: isActive ? 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)' : '#ffffff',
+                textAlign: 'left',
+                cursor: 'pointer',
+                boxShadow: isActive ? '0 8px 20px rgba(124, 58, 237, 0.1)' : '0 2px 4px rgba(0,0,0,0.02)',
+                transition: 'all 0.25s',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: isActive ? '#7c3aed' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  WEEK {w}
+                </span>
+                <CalendarRange size={16} style={{ color: isActive ? '#7c3aed' : '#94a3b8' }} />
+              </div>
+              <div style={{ fontSize: '1rem', fontWeight: 900, color: '#0f172a' }}>
+                {weekStartDate ? `Starts ${weekStartDate}` : `Schedule Week ${w}`}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.2rem', fontWeight: 600 }}>
+                7 Days AI Rotated Plan
+              </div>
+            </motion.button>
+          );
+        })}
+      </div>
+
+      {/* Day Selector Navigation Bar */}
       <div style={{
-        background: '#f8fafc',
-        border: '1px solid #e2e8f0',
-        borderRadius: '1rem',
-        padding: '1rem 1.25rem',
-        marginBottom: '1.5rem',
         display: 'flex',
         alignItems: 'center',
-        gap: '0.75rem',
-        flexWrap: 'wrap',
+        background: '#f8fafc',
+        borderRadius: '1rem',
+        padding: '0.5rem',
+        gap: '0.35rem',
+        marginBottom: '2rem',
+        border: '1px solid #e2e8f0',
+        overflowX: 'auto',
       }}>
-        {/* Search */}
-        <div style={{ position: 'relative', flex: 1, minWidth: '200px', maxWidth: '380px' }}>
-          <Search size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+        <button
+          onClick={() => { setSelectedDay("All"); setCurrentPage(1); }}
+          style={{
+            padding: '0.6rem 1.25rem',
+            borderRadius: '0.75rem',
+            fontSize: '0.85rem',
+            fontWeight: 800,
+            cursor: 'pointer',
+            border: 'none',
+            background: selectedDay === 'All' ? '#7c3aed' : 'transparent',
+            color: selectedDay === 'All' ? '#ffffff' : '#64748b',
+            transition: 'all 0.2s',
+          }}
+        >
+          📅 Weekly Overview
+        </button>
+
+        {daysOfWeek.map(d => {
+          const counts = getDayCounts(d);
+          const isSelected = selectedDay === d;
+          return (
+            <button
+              key={d}
+              onClick={() => { setSelectedDay(d); setCurrentPage(1); }}
+              style={{
+                padding: '0.6rem 1.1rem',
+                borderRadius: '0.75rem',
+                fontSize: '0.85rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                border: 'none',
+                background: isSelected ? '#7c3aed' : 'transparent',
+                color: isSelected ? '#ffffff' : '#475569',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span>{d.substring(0, 3)}</span>
+              <span style={{
+                fontSize: '0.7rem',
+                padding: '0.1rem 0.4rem',
+                borderRadius: '6px',
+                background: isSelected ? 'rgba(255,255,255,0.2)' : '#e2e8f0',
+                color: isSelected ? '#ffffff' : '#475569',
+                fontWeight: 800,
+              }}>
+                {counts.working}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Advanced Filters Roster */}
+      <div style={{
+        background: '#ffffff',
+        border: '1px solid #e2e8f0',
+        borderRadius: '1rem',
+        padding: '1.25rem',
+        marginBottom: '2rem',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '1rem',
+        flexWrap: 'wrap',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+      }}>
+        {/* Search Input */}
+        <div style={{ position: 'relative', flex: '1 1 300px' }}>
+          <Search size={16} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
           <input
             type="text"
-            placeholder="Search employee..."
+            placeholder="Search by Employee Name, ID or Role..."
             value={searchFilter}
-            onChange={e => setSearchFilter(e.target.value)}
+            onChange={e => { setSearchFilter(e.target.value); setCurrentPage(1); }}
             style={{
               width: '100%',
-              paddingLeft: '2.25rem',
-              paddingRight: '1rem',
-              paddingTop: '0.6rem',
-              paddingBottom: '0.6rem',
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '0.6rem',
+              padding: '0.7rem 1rem 0.7rem 2.5rem',
+              borderRadius: '0.75rem',
+              border: '1px solid #cbd5e1',
               color: '#0f172a',
               fontSize: '0.875rem',
+              fontWeight: 600,
               outline: 'none',
+              transition: 'border-color 0.2s',
             }}
           />
         </div>
 
-        {/* Filter icon */}
-        <Filter size={18} style={{ color: '#94a3b8', marginLeft: '0.25rem' }} />
+        {/* Filters Select boxes */}
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {/* Department Filter */}
+          <select
+            value={deptFilter}
+            onChange={e => { setDeptFilter(e.target.value); setCurrentPage(1); }}
+            style={selectStyle}
+          >
+            <option value="All Depts">All Departments</option>
+            {distinctDepts.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
 
-        {/* Week filter */}
-        <select
-          value={weekFilter}
-          onChange={e => setWeekFilter(e.target.value)}
-          style={selectStyle}
-        >
-          <option value="All Weeks">All Weeks</option>
-          <option value="Week 1">Week 1</option>
-          <option value="Week 2">Week 2</option>
-          <option value="Week 3">Week 3</option>
-          <option value="Week 4">Week 4</option>
-        </select>
-
-        {/* Shift filter */}
-        <select
-          value={activeShiftFilter}
-          onChange={e => setActiveShiftFilter(e.target.value)}
-          style={selectStyle}
-        >
-          <option value="All Shifts">All Shifts</option>
-          {shiftNames.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-
-        {/* Role filter */}
-        <select
-          value={roleFilter}
-          onChange={e => setRoleFilter(e.target.value)}
-          style={selectStyle}
-        >
-          <option value="All Roles">All Roles</option>
-          {displayRoles.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
-
-        {/* OT toggle */}
-        <button
-          onClick={() => setShowOTOnly(!showOTOnly)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem',
-            padding: '0.55rem 1rem',
-            borderRadius: '0.6rem',
-            fontSize: '0.875rem',
-            fontWeight: 700,
-            border: '1px solid #e2e8f0',
-            background: showOTOnly ? '#7c3aed' : '#ffffff',
-            color: showOTOnly ? '#fff' : '#64748b',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
-        >
-          <Clock size={14} /> OT
-        </button>
+          {/* Role Filter */}
+          <select
+            value={roleFilter}
+            onChange={e => { setRoleFilter(e.target.value); setCurrentPage(1); }}
+            style={selectStyle}
+          >
+            <option value="All Roles">All Roles</option>
+            {distinctRoles.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
       </div>
 
-      {/* Week Rows */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        {weekData.map(({ week, employees: weekEmployees }) => {
-          // Apply weekFilter
-          if (weekFilter !== 'All Weeks' && weekFilter !== `Week ${week}`) return null;
-          const isOpen = !!expandedWeeks[week];
-
-          return (
-            <div key={week} style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: '0.85rem',
-              overflow: 'hidden',
-            }}>
-              {/* Row Header */}
-              <button
-                onClick={() => toggleWeek(week)}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '1rem 1.25rem',
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#0f172a',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <CalendarDays size={18} style={{ color: '#7c3aed' }} />
-                  <span style={{ fontWeight: 800, fontSize: '0.9rem', letterSpacing: '0.05em', color: '#0f172a' }}>
-                    WEEK {week}
-                  </span>
-                  <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>
-                    7 days · {weekEmployees.length} assigned
-                  </span>
-                </div>
-                <ChevronDown
-                  size={18}
+      {/* Main Roster Schedule View */}
+      {filteredEmployees.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '4rem 2rem', border: '2px dashed #e2e8f0', borderRadius: '1.25rem', color: '#64748b' }}>
+          <Calendar size={48} style={{ color: '#cbd5e1', marginBottom: '1rem' }} />
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.25rem' }}>No Employees Scheduled</h3>
+          <p style={{ fontSize: '0.875rem' }}>No records match your active search and filter options.</p>
+        </div>
+      ) : selectedDay === "All" ? (
+        /* WEEKLY CALENDAR TABLE LAYOUT */
+        <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '1.25rem', boxShadow: '0 2px 5px rgba(0,0,0,0.02)' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <th style={{ padding: '1.25rem 1.5rem', color: '#475569', fontSize: '0.8rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', width: '220px' }}>Employee</th>
+                <th style={{ padding: '1.25rem 1rem', color: '#475569', fontSize: '0.8rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', width: '160px' }}>Role / Dept</th>
+                {daysOfWeek.map(day => (
+                  <th key={day} style={{ padding: '1.25rem 1rem', color: '#475569', fontSize: '0.8rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
+                    {day.substring(0,3)}
+                  </th>
+                ))}
+                <th style={{ padding: '1.25rem 1.5rem', color: '#475569', fontSize: '0.8rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center', width: '120px' }}>Off Day</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedEmployees.map((emp, index) => (
+                <tr
+                  key={emp.id || index}
                   style={{
-                    color: '#64748b',
-                    transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.25s',
+                    borderBottom: index === paginatedEmployees.length - 1 ? 'none' : '1px solid #f1f5f9',
+                    background: index % 2 === 0 ? '#ffffff' : '#f8fafc',
+                    transition: 'background 0.2s',
                   }}
-                />
-              </button>
+                  onMouseEnter={e => { e.currentTarget.style.background = '#f5f3ff'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = index % 2 === 0 ? '#ffffff' : '#f8fafc'; }}
+                >
+                  {/* Name & ID */}
+                  <td style={{ padding: '1.25rem 1.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{
+                        width: '36px', height: '36px', borderRadius: '0.5rem',
+                        background: 'linear-gradient(135deg, #7c3aed 0%, #c4b5fd 100%)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.9rem', fontWeight: 900, color: '#ffffff'
+                      }}>
+                        {emp.name.charAt(0)}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0f172a' }}>{emp.name}</div>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed' }}>{emp.emp_id}</div>
+                      </div>
+                    </div>
+                  </td>
+                  {/* Role & Dept */}
+                  <td style={{ padding: '1.25rem 1rem' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 750, color: '#334155' }}>{emp.role}</div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{emp.department}</div>
+                  </td>
+                  {/* Monday to Sunday shifts */}
+                  {daysOfWeek.map(day => {
+                    const shiftName = emp.schedules ? emp.schedules[day] : 'Morning';
+                    return (
+                      <td key={day} style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>
+                        <span style={getShiftBadgeStyle(shiftName)}>
+                          {shiftName}
+                        </span>
+                      </td>
+                    );
+                  })}
+                  {/* Rotated Off Day */}
+                  <td style={{ padding: '1.25rem 1.5rem', textAlign: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#d97706', background: '#fef3c7', padding: '0.25rem 0.6rem', borderRadius: '6px', border: '1px solid #fde68a' }}>
+                      {emp.weekly_off}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        /* DAILY SHIFT GROUP CARDS LAYOUT */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          {["Morning", "Afternoon", "Evening", "Night", "WEEK OFF"].map(shift => {
+            const shiftEmployees = paginatedEmployees.filter(emp => emp.schedules && emp.schedules[selectedDay] === shift);
+            if (shiftEmployees.length === 0) return null;
 
-              {/* Expanded Employee Grid */}
-              {isOpen && (
-                <div style={{ padding: '0 1.25rem 1.25rem 1.25rem' }}>
-                  {weekEmployees.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b', fontSize: '0.875rem' }}>
-                      No employees found for this week with the current filters.
-                    </div>
-                  ) : (
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                      gap: '0.75rem',
-                    }}>
-                      {weekEmployees.map((item, idx) => {
-                        if (!item || typeof item !== 'object') return null;
-                        return (
-                          <motion.div
-                            key={item?.emp_id || idx}
-                            initial={{ opacity: 0, y: 16 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: idx * 0.03 }}
-                            style={{
-                              background: '#ffffff',
-                              border: '1px solid #e2e8f0',
-                              borderRadius: '0.85rem',
-                              padding: '1.1rem 1.25rem',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s',
-                              boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
-                            }}
-                            whileHover={{ background: '#f5f3ff', borderColor: '#c4b5fd' }}
-                            onClick={async () => {
-                              if (!window.confirm(`Mark ${item?.name || 'employee'} as on leave today and assign an AI replacement?`)) return;
-                              const token = localStorage.getItem('token');
-                              try {
-                                await axios.post('http://127.0.0.1:8000/apply-leave', {
-                                  employee_name: item?.name,
-                                  date: new Date().toISOString().split('T')[0]
-                                }, { headers: { Authorization: `Bearer ${token}` } });
-                                onUpdate && onUpdate();
-                              } catch (e) {
-                                alert(e?.response?.data?.detail || 'Error assigning replacement');
-                              }
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                              <div style={{
-                                width: '38px', height: '38px', borderRadius: '0.55rem',
-                                background: '#f5f3ff',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '1rem', fontWeight: 900, color: '#7c3aed',
-                                flexShrink: 0,
-                                border: '1px solid #ddd6fe',
-                              }}>
-                                {(item?.name || '?').charAt(0)}
-                              </div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {item?.name || 'Unknown'}
-                                </div>
-                                <div style={{ color: '#7c3aed', fontSize: '0.75rem', fontWeight: 700 }}>
-                                  {item?.emp_id || 'N/A'}
-                                </div>
-                              </div>
-                              {item?.shiftName && (
-                                <span style={{
-                                  padding: '0.2rem 0.6rem',
-                                  borderRadius: '999px',
-                                  background: '#f1f5f9',
-                                  color: '#475569',
-                                  fontSize: '0.65rem',
-                                  fontWeight: 800,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.08em',
-                                  whiteSpace: 'nowrap',
-                                  border: '1px solid #e2e8f0',
-                                }}>
-                                  {item.shiftName}
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-                                <span style={{ color: '#64748b', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                                  {item?.role || 'Staff'}
-                                </span>
-                              </div>
-                              <span style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600 }}>
-                                {item?.start_time || '--'} – {item?.end_time || '--'}
-                              </span>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  )}
+            const isOff = shift === "WEEK OFF";
+            
+            return (
+              <div key={shift}>
+                {/* Shift Sub-Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', borderBottom: '2px solid #f1f5f9', paddingBottom: '0.5rem' }}>
+                  <span style={getShiftBadgeStyle(shift)}>{shift}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 700 }}>
+                    {shiftEmployees.length} {shiftEmployees.length === 1 ? 'employee' : 'employees'} assigned
+                  </span>
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+
+                {/* Grid layout for employee cards in this shift */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                  {shiftEmployees.map((emp, index) => (
+                    <motion.div
+                      key={emp.id || index}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      whileHover={{ scale: 1.01, borderColor: isOff ? '#fde68a' : '#c4b5fd', background: isOff ? '#fffbeb' : '#f5f3ff' }}
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '1rem',
+                        padding: '1.25rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                      }}
+                      onClick={async () => {
+                        if (isOff) {
+                          alert(`${emp.name} is on WEEK OFF. Let them rest!`);
+                          return;
+                        }
+                        if (!window.confirm(`Mark ${emp.name} as on leave for ${selectedDay} in Week ${selectedWeek}? AI will find an ideal replacement.`)) return;
+                        const token = localStorage.getItem('token');
+                        try {
+                          await axios.post('http://127.0.0.1:8000/apply-leave', {
+                            employee_name: emp.name,
+                            date: weeks[selectedWeek]?.start_date // Use start date as target
+                          }, { headers: { Authorization: `Bearer ${token}` } });
+                          alert('Leave marked and replacement assigned!');
+                          fetch4WeekSchedule();
+                          onUpdate && onUpdate();
+                        } catch (e) {
+                          alert(e?.response?.data?.detail || 'Error applying leave');
+                        }
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                        <div style={{
+                          width: '38px', height: '38px', borderRadius: '0.55rem',
+                          background: isOff ? '#fffbeb' : '#f5f3ff',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '1rem', fontWeight: 900, color: isOff ? '#d97706' : '#7c3aed',
+                          flexShrink: 0,
+                          border: isOff ? '1px solid #fde68a' : '1px solid #ddd6fe',
+                        }}>
+                          {emp.name.charAt(0)}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {emp.name}
+                          </div>
+                          <div style={{ color: isOff ? '#d97706' : '#7c3aed', fontSize: '0.75rem', fontWeight: 700 }}>
+                            {emp.emp_id}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{
+                            width: '6px', height: '6px', borderRadius: '50%',
+                            background: isOff ? '#f59e0b' : '#10b981',
+                            display: 'inline-block'
+                          }} />
+                          <span style={{ color: '#64748b', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            {emp.role}
+                          </span>
+                        </div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700 }}>
+                          {emp.department}
+                        </span>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modern High-Performance Pagination Bar */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2rem', paddingTop: '1.25rem', borderTop: '1px solid #e2e8f0' }}>
+          <button
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: '0.5rem',
+              border: '1px solid #cbd5e1',
+              background: '#ffffff',
+              color: currentPage === 1 ? '#94a3b8' : '#0f172a',
+              fontSize: '0.85rem',
+              fontWeight: 800,
+              cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            Previous
+          </button>
+          <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: 750 }}>
+            Page {currentPage} of {totalPages} <span style={{ color: '#94a3b8', fontWeight: 500 }}>({filteredEmployees.length} employees)</span>
+          </span>
+          <button
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: '0.5rem',
+              border: '1px solid #cbd5e1',
+              background: '#ffffff',
+              color: currentPage === totalPages ? '#94a3b8' : '#0f172a',
+              fontSize: '0.85rem',
+              fontWeight: 800,
+              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 };

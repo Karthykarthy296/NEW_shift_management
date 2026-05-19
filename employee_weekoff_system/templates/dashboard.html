@@ -10,6 +10,39 @@
 </div>
 {% endif %}
 
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary mb-3 h-100">
+            <div class="card-body">
+                <h5 class="card-title">Total Off Employees</h5>
+                <p class="card-text h2">{{ total_off }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info mb-3 h-100">
+            <div class="card-body">
+                <h5 class="card-title">Replacement Pool</h5>
+                <p class="card-text h2">{{ replacement_employees }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-light mb-3 h-100">
+            <div class="card-body">
+                <h5 class="card-title">Department Off Count</h5>
+                <ul class="list-unstyled mb-0" style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    {% for dept, count in dept_off_count.items() %}
+                    <li><strong>{{ dept }}:</strong> {{ count }}</li>
+                    {% else %}
+                    <li>No weekoffs assigned yet.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
 <h4>Current Weekoffs (Week of {{ week_start }})</h4>
 <table class="table table-bordered table-striped mt-3">
     <thead class="table-dark">

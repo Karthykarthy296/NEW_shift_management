@@ -59,7 +59,18 @@ def dashboard():
     weekoffs = Weekoff.query.filter_by(week_start_date=week_start).all()
     swaps = SwapRequest.query.all()
     
-    return render_template('dashboard.html', weekoffs=weekoffs, swaps=swaps, week_start=week_start)
+    total_off = len(weekoffs)
+    
+    dept_off_count = {}
+    for w in weekoffs:
+        dept = w.employee.team
+        dept_off_count[dept] = dept_off_count.get(dept, 0) + 1
+        
+    replacement_employees = total_off
+    
+    return render_template('dashboard.html', weekoffs=weekoffs, swaps=swaps, week_start=week_start,
+                           total_off=total_off, dept_off_count=dept_off_count,
+                           replacement_employees=replacement_employees)
 
 @bp.route('/generate_weekoffs', methods=['POST'])
 @login_required('admin')

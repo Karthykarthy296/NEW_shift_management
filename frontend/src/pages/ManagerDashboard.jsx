@@ -36,8 +36,7 @@ export default function ManagerDashboard() {
 
   useEffect(() => {
     fetchSchedule();
-    const interval = setInterval(fetchSchedule, 10000);
-    return () => clearInterval(interval);
+    // Fetch once on mount — no polling loop
   }, []);
 
   const handleUpload = async (file) => {

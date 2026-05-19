@@ -145,8 +145,7 @@ export const AttendanceReport = () => {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 15000);
-    return () => clearInterval(interval);
+    // Fetch once on mount — no polling loop
   }, []);
 
   return (
@@ -216,8 +215,7 @@ export const ShiftDistributionReport = () => {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
+    // Fetch once on mount — no polling loop
   }, []);
 
   return (

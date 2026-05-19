@@ -156,11 +156,7 @@ export default function Employees() {
   useEffect(() => {
     fetchEmployees();
     fetchRoles();
-    const interval = setInterval(() => {
-      fetchEmployees();
-      fetchRoles();
-    }, 15000); // Auto-refresh every 15s
-    return () => clearInterval(interval);
+    // Fetch once on mount — no polling loop
   }, []);
 
   const handleCreate = async (e) => {

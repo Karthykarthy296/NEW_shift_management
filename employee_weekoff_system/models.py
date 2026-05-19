@@ -26,6 +26,7 @@ class Employee(db.Model):
     shift = db.Column(db.String(50), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    overtime_hours = db.Column(db.Integer, default=0)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -54,3 +55,12 @@ class SwapRequest(db.Model):
     
     requestor = db.relationship('Employee', foreign_keys=[requestor_id])
     target = db.relationship('Employee', foreign_keys=[target_id])
+
+class Leave(db.Model):
+    __tablename__ = 'leaves'
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    
+    employee = db.relationship('Employee', backref='leaves')

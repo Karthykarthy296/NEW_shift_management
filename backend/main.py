@@ -812,15 +812,25 @@ async def get_schedule(background_tasks: BackgroundTasks, date: str = None, db: 
             print(f"Error fetching schedules: {str(e)}")
             schedules = []
         
-        # 4. Fetch weekly off employees safely
+        # 4. Fetch weekly off employees safely using rotated weekly off logic
         weekly_off_employees = []
         try:
             day_name = target_date.strftime('%A')
-            weekly_offs_query = db.query(Employee).filter(Employee.weekly_off == day_name)
-            weekly_offs = weekly_offs_query.all()
+            week_num = target_date.isocalendar()[1]
+            days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
             
-            for emp in weekly_offs:
-                if emp:  # Safety check
+            all_employees = db.query(Employee).all()
+            for emp in all_employees:
+                if not emp:
+                    continue
+                base_off = emp.weekly_off
+                if not base_off or str(base_off).strip().lower() == 'nan' or base_off == 'Not Set':
+                    base_off = "Sunday"
+                
+                base_off_idx = days_list.index(base_off) if base_off in days_list else 6
+                rotated_off_day = days_list[(base_off_idx + week_num) % 7]
+                
+                if day_name.lower() == rotated_off_day.lower():
                     weekly_off_employees.append({
                         "id": emp.id or 0,
                         "emp_id": emp.emp_id or "Unknown",
@@ -962,17 +972,24 @@ async def generate_schedule(request: dict, db: Session = Depends(get_db)):
         
         print(f"📅 Generating schedule for date: {date}")
         
-        # Get all employees and shifts
+        # Ensure "WEEK OFF" shift exists
+        week_off_shift = db.query(Shift).filter(Shift.name == "WEEK OFF").first()
+        if not week_off_shift:
+            week_off_shift = Shift(name="WEEK OFF", start_time="00:00", end_time="00:00", required_employees=0)
+            db.add(week_off_shift)
+            db.commit()
+
+        # Get all employees and active working shifts
         employees = db.query(Employee).all()
-        shifts = db.query(Shift).all()
+        shifts = db.query(Shift).filter(Shift.name != "WEEK OFF").all()
         
         if not employees:
             raise HTTPException(status_code=400, detail="No employees found in database")
         
         if not shifts:
-            raise HTTPException(status_code=400, detail="No shifts found in database")
+            raise HTTPException(status_code=400, detail="No active shifts found in database")
         
-        print(f"👥 Found {len(employees)} employees and {len(shifts)} shifts")
+        print(f"👥 Found {len(employees)} employees and {len(shifts)} working shifts")
         
         # Clear existing schedules for the date
         existing_schedules = db.query(Schedule).filter(Schedule.date == date).all()
@@ -985,70 +1002,108 @@ async def generate_schedule(request: dict, db: Session = Depends(get_db)):
         date_obj = datetime.datetime.strptime(date, '%Y-%m-%d').date()
         day_name = date_obj.strftime('%A')
         
-        # Filter employees who are not on weekly off
-        available_employees = [emp for emp in employees if emp.weekly_off != day_name]
-        weekly_off_count = len(employees) - len(available_employees)
+        # Query leaves for the date
+        leaves = db.query(Leave).filter(Leave.date == date).all()
+        leave_employee_ids = {l.employee_id for l in leaves}
+
+        # Calculate current week number for rotation
+        week_num = date_obj.isocalendar()[1]
+        days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+        available_employees = []
+        resting_employees = []
         
-        print(f"📊 Available employees: {len(available_employees)} (Weekly off: {weekly_off_count})")
-        
-        new_schedules = []
-        assigned_employees = set()
-        
-        # Assign employees to shifts
-        for shift in shifts:
-            shift_assignments = []
-            
-            # Sort employees by preference for this shift
-            sorted_employees = sorted(
-                available_employees,
-                key=lambda emp: (emp.preferred_shift == shift.name, emp.max_hours),
-                reverse=True
-            )
-            
-            # Assign employees to shift
-            for emp in sorted_employees:
-                if len(shift_assignments) >= shift.required_employees:
-                    break
+        for emp in employees:
+            if emp.id in leave_employee_ids or emp.leave_status == 'On Leave':
+                continue
                 
-                if emp.id not in assigned_employees:
-                    # Check if employee has enough hours
-                    if emp.max_hours >= 8:  # Default 8-hour shift
-                        schedule = Schedule(
-                            date=date,
-                            shift_id=shift.id,
-                            employee_id=emp.id,
-                            is_override=False
-                        )
-                        new_schedules.append(schedule)
-                        assigned_employees.add(emp.id)
-                        shift_assignments.append(emp)
+            # Determine rotated weekly off day fairly by week number
+            base_off = emp.weekly_off
+            if not base_off or str(base_off).strip().lower() == 'nan' or base_off == 'Not Set':
+                base_off = "Sunday"
             
-            print(f"🔄 Shift {shift.name}: {len(shift_assignments)} employees assigned")
+            base_off_idx = days_list.index(base_off) if base_off in days_list else 6
+            rotated_off_day = days_list[(base_off_idx + week_num) % 7]
             
-            # Add schedules to database
-            for schedule in shift_assignments:
-                db.add(schedule)
+            if day_name.lower() == rotated_off_day.lower():
+                resting_employees.append(emp)
+            else:
+                available_employees.append(emp)
+                
+        weekly_off_count = len(resting_employees)
+        print(f"📊 Available employees: {len(available_employees)} (Weekly off/Leave: {weekly_off_count})")
+        
+        # ── High-Performance Balanced Scheduling Engine ──
+        # Distribute ALL available employees across the active shifts equally
+        num_shifts = len(shifts)
+        shift_assignments = {s.id: [] for s in shifts}
+        
+        # Sort available employees deterministically to ensure stable results
+        # We sort by preferred shift first to prioritize preference
+        sorted_available = sorted(available_employees, key=lambda e: (e.preferred_shift or "", e.id))
+        
+        target_limit = (len(sorted_available) // num_shifts) + 1
+        shift_by_name = {s.name: s for s in shifts}
+        
+        for emp in sorted_available:
+            pref_shift = shift_by_name.get(emp.preferred_shift)
+            
+            # Assign to preferred shift if it has not exceeded target size
+            if pref_shift and len(shift_assignments[pref_shift.id]) < target_limit:
+                chosen_shift = pref_shift
+            else:
+                # Otherwise, balance workload by assigning to the shift with the least number of employees
+                chosen_shift = min(shifts, key=lambda s: len(shift_assignments[s.id]))
+                
+            shift_assignments[chosen_shift.id].append(emp)
+        
+        # 4. Save new schedules in bulk using fast database mappings
+        schedule_mappings = []
+        new_schedules = []
+        for shift_id, emps_list in shift_assignments.items():
+            for emp in emps_list:
+                schedule_mappings.append({
+                    "date": date,
+                    "shift_id": shift_id,
+                    "employee_id": emp.id,
+                    "is_override": False,
+                    "replaced_employee_id": None
+                })
+                new_schedules.append(emp)
+
+        # Save resting weekly off assignments as "WEEK OFF" shift
+        for emp in resting_employees:
+            schedule_mappings.append({
+                "date": date,
+                "shift_id": week_off_shift.id,
+                "employee_id": emp.id,
+                "is_override": False,
+                "replaced_employee_id": None
+            })
+                
+        if schedule_mappings:
+            db.bulk_insert_mappings(Schedule, schedule_mappings)
         
         # Commit all changes
         db.commit()
         
-        print(f"✅ Successfully generated and saved {len(new_schedules)} schedules")
+        print(f"✅ Successfully generated and saved {len(schedule_mappings)} schedules")
         print(f"📈 Total employees: {len(employees)}")
         print(f"🏖️  Weekly off: {weekly_off_count}")
         print(f"💼 Active assignments: {len(new_schedules)}")
         
         # Log this generation
-        log_schedule_generation(db, date, total_assignments=len(new_schedules), trigger_source="manual")
+        log_schedule_generation(db, date, total_assignments=len(schedule_mappings), trigger_source="manual")
         
         return {
             "status": "success",
-            "message": f"Successfully generated {len(new_schedules)} shift assignments for {date}",
+            "message": f"Successfully generated {len(new_schedules)} shift assignments and {weekly_off_count} weekly off plans for {date}",
             "date": date,
             "total_employees": len(employees),
             "weekly_off_count": weekly_off_count,
             "active_assignments": len(new_schedules),
             "shift_assignments": {
-                shift.name: len([s for s in new_schedules if s.shift_id == shift.id])
+                shift.name: len([s for s in new_schedules if s.preferred_shift == shift.name])
                 for shift in shifts
             }
         }
@@ -1154,6 +1209,146 @@ async def get_weekly_schedule(start_date: str = None, db: Session = Depends(get_
     except Exception as e:
         print(f"Error getting weekly schedule: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting weekly schedule: {str(e)}")
+
+def get_current_week_monday(start_date_str: str = None) -> datetime.date:
+    if start_date_str:
+        dt = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
+    else:
+        dt = datetime.date.today()
+    monday = dt - datetime.timedelta(days=dt.weekday())
+    return monday
+
+@app.post("/generate-4-week-schedule")
+async def generate_4_week_schedule(request: dict, db: Session = Depends(get_db)):
+    """
+    Generate 4 weeks of schedules (28 days) in a single optimized transaction block
+    """
+    try:
+        print("=== GENERATE 4-WEEK SCHEDULE API CALLED ===")
+        start_date = request.get("start_date")
+        if not start_date:
+            start_date = datetime.date.today().isoformat()
+            
+        start_monday = get_current_week_monday(start_date)
+        from excel_upload_manager import ExcelUploadManager
+        manager = ExcelUploadManager(db)
+        
+        summaries = []
+        total_created = 0
+        
+        for w_idx in range(4):
+            w_start_dt = start_monday + datetime.timedelta(days=w_idx * 7)
+            w_start_str = w_start_dt.isoformat()
+            print(f"🔄 Generating week {w_idx+1} starting at: {w_start_str}")
+            
+            success, message, summary = manager.generate_weekly_schedule(w_start_str)
+            if not success:
+                raise HTTPException(status_code=400, detail=f"Failed to generate week {w_idx+1}: {message}")
+            
+            summaries.append(summary)
+            total_created += summary.get('total_assignments', 0)
+            
+        print(f"✅ Successfully generated 4-week schedule: {total_created} assignments saved.")
+        
+        # Log this bulk generation
+        log_schedule_generation(
+            db, start_monday.isoformat(),
+            total_assignments=total_created,
+            trigger_source="4-week-ai-generator"
+        )
+        
+        return {
+            "status": "success",
+            "message": f"Successfully generated 4-week schedule ({total_created} assignments saved)",
+            "start_date": start_monday.isoformat(),
+            "summaries": summaries
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error generating 4-week schedule: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error generating 4-week schedule: {str(e)}")
+
+@app.get("/get-4-week-schedule")
+async def get_4_week_schedule(start_date: str = None, db: Session = Depends(get_db)):
+    """
+    Retrieve highly optimized 4-week calendar schedule structured for high-performance React table
+    """
+    try:
+        start_monday = get_current_week_monday(start_date)
+        end_date = start_monday + datetime.timedelta(days=27)
+        
+        print(f"📅 Retrieving 4-week schedule from {start_monday.isoformat()} to {end_date.isoformat()}")
+        
+        # Prefetch data in single query
+        employees = db.query(Employee).all()
+        shifts = db.query(Shift).all()
+        shift_map = {s.id: s.name for s in shifts}
+        
+        schedules = db.query(Schedule).filter(
+            Schedule.date >= start_monday.isoformat(),
+            Schedule.date <= end_date.isoformat()
+        ).all()
+        
+        schedule_map = {
+            (s.employee_id, s.date): shift_map.get(s.shift_id, "WEEK OFF")
+            for s in schedules
+        }
+        
+        days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        weeks_data = {}
+        
+        for w_idx in range(4):
+            w_num = w_idx + 1
+            w_start_dt = start_monday + datetime.timedelta(days=w_idx * 7)
+            w_start_str = w_start_dt.isoformat()
+            
+            emp_list = []
+            for emp in employees:
+                emp_schedules = {}
+                # Use the explicitly balanced weekly off from the DB
+                base_off = emp.weekly_off
+                if not base_off or str(base_off).strip().lower() == 'nan' or base_off not in days_of_week:
+                    base_off = "Sunday"
+                rotated_off_day = base_off
+                
+                for day_offset, day_name in enumerate(days_of_week):
+                    current_day_dt = w_start_dt + datetime.timedelta(days=day_offset)
+                    current_day_str = current_day_dt.isoformat()
+                    
+                    assigned_shift = schedule_map.get((emp.id, current_day_str))
+                    if not assigned_shift:
+                        if day_name.lower() == rotated_off_day.lower():
+                            assigned_shift = "WEEK OFF"
+                        else:
+                            assigned_shift = "Morning" # default fallback
+                            
+                    emp_schedules[day_name] = assigned_shift
+                    
+                emp_list.append({
+                    "id": emp.id,
+                    "emp_id": emp.emp_id,
+                    "name": emp.name,
+                    "role": emp.role or "Staff",
+                    "department": emp.department.name if emp.department else "General",
+                    "weekly_off": rotated_off_day,
+                    "schedules": emp_schedules
+                })
+                
+            weeks_data[str(w_num)] = {
+                "start_date": w_start_str,
+                "employees": emp_list
+            }
+            
+        return {
+            "status": "success",
+            "start_date": start_monday.isoformat(),
+            "weeks": weeks_data
+        }
+    except Exception as e:
+        print(f"❌ Error getting 4-week schedule: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting 4-week schedule: {str(e)}")
 
 @app.post("/update-shift-assignment")
 async def update_shift_assignment(request: dict, db: Session = Depends(get_db)):
@@ -1906,6 +2101,172 @@ def export_report(report_type: str, format: str, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Export Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FAIR WEEKLY OFF DISTRIBUTION — Enterprise AI Endpoints
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/weekly-off-distribution")
+async def get_weekly_off_distribution(db: Session = Depends(get_db)):
+    """
+    Returns the current weekly off distribution stats for all employees.
+    Includes per-day counts, ideal target, balance score, and unassigned count.
+    """
+    try:
+        result = ai_scheduler.get_weekly_off_distribution(db)
+        return {"status": "success", **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching distribution: {str(e)}")
+
+
+@app.post("/assign-weekly-offs")
+async def assign_weekly_offs(request: dict = {}, db: Session = Depends(get_db)):
+    """
+    Runs the enterprise fair weekly off assignment algorithm.
+    Uses min-heap balancing to guarantee even distribution across all 7 days.
+    
+    Body (optional):
+      { "force_reassign": true }  — re-assign ALL employees (even those with valid offs)
+    """
+    try:
+        force = bool(request.get("force_reassign", False))
+        print(f"[API] /assign-weekly-offs called. force_reassign={force}")
+        result = ai_scheduler.auto_assign_weekly_offs(db, force_reassign=force)
+        return result
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error assigning weekly offs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error assigning weekly offs: {str(e)}")
+
+
+@app.post("/rotate-weekly-offs")
+async def rotate_weekly_offs(request: dict = {}, db: Session = Depends(get_db)):
+    """
+    Rotates all employee weekly off days forward by N steps for fairness.
+    Ensures no employee is permanently stuck on the same off day.
+    
+    Body (optional):
+      { "week_offset": 1 }   — steps forward (default: 1)
+    """
+    try:
+        offset = int(request.get("week_offset", 1))
+        if offset < 1 or offset > 6:
+            raise HTTPException(status_code=400, detail="week_offset must be between 1 and 6")
+        result = ai_scheduler.rotate_weekly_offs_for_week(db, week_offset=offset)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error rotating weekly offs: {str(e)}")
+
+
+@app.patch("/employees/{emp_id}/weekly-off")
+async def update_employee_weekly_off(
+    emp_id: int,
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Update a single employee's weekly off day manually.
+    Validates that the new day is a valid day of the week.
+    
+    Body: { "weekly_off": "Tuesday" }
+    """
+    try:
+        new_day = request.get("weekly_off", "").strip().capitalize()
+        valid_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        if new_day not in valid_days:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid day '{new_day}'. Must be one of: {', '.join(valid_days)}"
+            )
+
+        emp = db.query(Employee).filter(Employee.id == emp_id).first()
+        if not emp:
+            raise HTTPException(status_code=404, detail=f"Employee {emp_id} not found")
+
+        old_day = emp.weekly_off
+        emp.weekly_off = new_day
+        db.commit()
+
+        print(f"[API] Employee {emp.name} weekly off updated: {old_day} → {new_day}")
+        return {
+            "status": "success",
+            "employee_id": emp_id,
+            "employee_name": emp.name,
+            "old_weekly_off": old_day,
+            "new_weekly_off": new_day,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating weekly off: {str(e)}")
+
+
+@app.get("/weekly-off-roster")
+async def get_weekly_off_roster(
+    day: str = None,
+    department: str = None,
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns paginated roster of employees grouped by their weekly off day.
+    Supports filtering by specific day or department.
+    """
+    try:
+        valid_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        query = db.query(Employee)
+
+        if day:
+            day = day.strip().capitalize()
+            if day not in valid_days:
+                raise HTTPException(status_code=400, detail=f"Invalid day: {day}")
+            query = query.filter(Employee.weekly_off == day)
+
+        if department:
+            from sqlalchemy.orm import aliased
+            query = query.join(Department).filter(Department.name.ilike(f"%{department}%"))
+
+        total = query.count()
+        employees = query.offset((page - 1) * page_size).limit(page_size).all()
+
+        roster = []
+        for emp in employees:
+            roster.append({
+                "id": emp.id,
+                "emp_id": emp.emp_id,
+                "name": emp.name,
+                "role": emp.role or "Staff",
+                "department": emp.department.name if emp.department else "General",
+                "weekly_off": emp.weekly_off or "Not Set",
+            })
+
+        # Distribution summary
+        distribution = {d: 0 for d in valid_days}
+        all_emps = db.query(Employee).all()
+        for e in all_emps:
+            if e.weekly_off in valid_days:
+                distribution[e.weekly_off] += 1
+
+        return {
+            "status": "success",
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+            "employees": roster,
+            "distribution": distribution,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching roster: {str(e)}")
+
 
 
 

@@ -140,3 +140,13 @@ class ScheduleGenerationLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     generator = relationship("User", foreign_keys=[generated_by])
+
+class WeeklyOffHistory(Base):
+    __tablename__ = "weekly_off_history"
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id"), index=True)
+    week_start_date = Column(String(20), index=True)  # e.g. "2026-05-18"
+    off_day = Column(String(20))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    employee = relationship("Employee")
