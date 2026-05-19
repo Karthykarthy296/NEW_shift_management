@@ -3,10 +3,50 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 import os
+import logging
 
-DATABASE_URL = "sqlite:///./shift_db_new.db"
+# Setup database logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("DatabaseSetup")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_TYPE = os.getenv("DATABASE_TYPE", "mysql")  # Default to MySQL as primary database
+
+engine = None
+DATABASE_URL = None
+
+if DATABASE_TYPE == "mysql":
+    MYSQL_USER = os.getenv("MYSQL_USER", "root")
+    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "rootpassword")
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+    MYSQL_PORT = os.getenv("MYSQL_PORT", "3306")
+    MYSQL_DB = os.getenv("MYSQL_DB", "shift_db_new")
+    
+    # Use pymysql connector with UTF-8 encoding
+    DATABASE_URL = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4"
+    logger.info(f"Attempting to connect to primary MySQL database at {MYSQL_HOST}:{MYSQL_PORT}...")
+    try:
+        engine = create_engine(
+            DATABASE_URL,
+            pool_size=10,
+            max_overflow=20,
+            pool_recycle=3600,
+            pool_pre_ping=True
+        )
+        # Test connection to verify MySQL is running and accessible
+        with engine.connect() as conn:
+            pass
+        logger.info("✓ Successfully connected to MySQL database!")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not connect to MySQL server: {e}")
+        logger.warning("⚠️ Falling back to SQLite database for safety and continuous operation.")
+        engine = None
+
+if engine is None:
+    DATABASE_TYPE = "sqlite"
+    DATABASE_URL = "sqlite:///./shift_db_new.db"
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    logger.info("✓ Connected to SQLite database.")
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
@@ -33,7 +73,7 @@ class Employee(Base):
     id = Column(Integer, primary_key=True, index=True)
     emp_id = Column(String(50), unique=True, index=True) # External Employee ID from Excel
     name = Column(String(100), index=True)
-    role = Column(String(100)) # Role from Excel (e.g., Manager, Staff, etc.)
+    role = Column(String(100), index=True) # Role from Excel (e.g., Manager, Staff, etc.) with index
     skills = Column(JSON) # List of skills
     preferred_shift = Column(String(50))
     max_hours = Column(Integer)
@@ -55,8 +95,8 @@ class Schedule(Base):
     __tablename__ = "schedules"
     id = Column(Integer, primary_key=True, index=True)
     date = Column(String(20), index=True)
-    shift_id = Column(Integer, ForeignKey("shifts.id"))
-    employee_id = Column(Integer, ForeignKey("employees.id"))
+    shift_id = Column(Integer, ForeignKey("shifts.id"), index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id"), index=True)
     is_override = Column(Boolean, default=False)
     replaced_employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
     
@@ -67,7 +107,7 @@ class Schedule(Base):
 class Leave(Base):
     __tablename__ = "leaves"
     id = Column(Integer, primary_key=True, index=True)
-    employee_id = Column(Integer, ForeignKey("employees.id"))
+    employee_id = Column(Integer, ForeignKey("employees.id"), index=True)
     date = Column(String(20), index=True)
     
     employee = relationship("Employee")
