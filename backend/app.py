@@ -35,10 +35,6 @@ if __name__ == '__main__':
     # Start scheduler
     from scheduler import start_scheduler
     
-    # Fallback to sqlite for instant local testing without docker
-    if 'mysql' not in app.config['SQLALCHEMY_DATABASE_URI']:
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///prod_weekoff.db'
-    
     init_db()
     start_scheduler()
     app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)

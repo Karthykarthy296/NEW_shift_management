@@ -3,14 +3,14 @@ from jose import JWTError, jwt
 import bcrypt
 from typing import Optional
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 SECRET_KEY = "supersecretkey_shift_system"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
-# pwd_context removed because of bcrypt compatibility issues
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+# HTTPBearer for JWT authentication
+security = HTTPBearer()
 
 def verify_password(plain_password, hashed_password):
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))

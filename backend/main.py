@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department, ScheduleGenerationLog, WeeklyShiftChange
@@ -7,6 +7,7 @@ import shutil
 import os
 import datetime
 from typing import Optional, List, Dict
+from fastapi.security import HTTPAuthorizationCredentials
 
 Base.metadata.create_all(bind=engine)
 
@@ -55,7 +56,8 @@ def get_db():
     finally:
         db.close()
 
-def get_current_user(token: str = Depends(auth.oauth2_scheme), db: Session = Depends(get_db)):
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth.security), db: Session = Depends(get_db)):
+    token = credentials.credentials
     payload = auth.decode_access_token(token)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
@@ -63,6 +65,14 @@ def get_current_user(token: str = Depends(auth.oauth2_scheme), db: Session = Dep
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+# Grouping Routers
+auth_router = APIRouter(tags=["Authentication"])
+employees_router = APIRouter(tags=["Employees"], dependencies=[Depends(get_current_user)])
+schedules_router = APIRouter(tags=["Schedules"], dependencies=[Depends(get_current_user)])
+leaves_router = APIRouter(tags=["Leaves & Time Off"], dependencies=[Depends(get_current_user)])
+reports_router = APIRouter(tags=["Reports & Dashboard"], dependencies=[Depends(get_current_user)])
+departments_router = APIRouter(tags=["Departments"], dependencies=[Depends(get_current_user)])
 
 def require_role(roles: list):
     def role_checker(current_user: User = Depends(get_current_user)):
@@ -88,7 +98,7 @@ def log_schedule_generation(db: Session, generated_for_date: str, total_assignme
         db.rollback()
 
 
-@app.get("/schedules-generated-count")
+@schedules_router.get("/schedules-generated-count")
 async def schedules_generated_count(db: Session = Depends(get_db)):
     """Return how many schedules have been generated this calendar month."""
     try:
@@ -113,7 +123,7 @@ async def schedules_generated_count(db: Session = Depends(get_db)):
         print(f"Error fetching schedule generation count: {e}")
         return {"count": 1, "month": datetime.date.today().strftime("%B %Y")}
 
-@app.post("/login")
+@auth_router.post("/login")
 def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.username == user.username).first()
     if not db_user or not auth.verify_password(user.password, db_user.password_hash):
@@ -121,7 +131,7 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
     access_token = auth.create_access_token(data={"sub": db_user.username, "role": db_user.role})
     return {"access_token": access_token, "token_type": "bearer", "role": db_user.role}
 
-@app.post("/create-user")
+@auth_router.post("/create-user")
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
     existing = db.query(User).filter(User.username == user.username).first()
     if existing:
@@ -132,12 +142,12 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current
     db.commit()
     return {"msg": f"User {user.username} created successfully"}
 
-@app.get("/users")
+@auth_router.get("/users")
 def get_users(db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
     users = db.query(User).all()
     return [{"id": u.id, "username": u.username, "role": u.role} for u in users]
 
-@app.delete("/users/{user_id}")
+@auth_router.delete("/users/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -147,7 +157,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), current_user: User 
     return {"msg": "User deleted successfully"}
 
 
-@app.post("/employees")
+@employees_router.post("/employees")
 def create_employee(emp: schemas.EmployeeCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     existing = db.query(Employee).filter(Employee.emp_id == emp.emp_id).first()
     if existing:
@@ -167,7 +177,7 @@ def create_employee(emp: schemas.EmployeeCreate, db: Session = Depends(get_db), 
 
 # --- Admin Bulk Personnel Operations ---
 
-@app.get("/employees/roles")
+@employees_router.get("/employees/roles")
 def get_employee_roles(db: Session = Depends(get_db)):
     """
     Get all unique employee roles currently defined in the database.
@@ -182,7 +192,7 @@ def get_employee_roles(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to fetch unique employee roles")
 
 
-@app.delete("/employees/bulk-delete")
+@employees_router.delete("/employees/bulk-delete")
 def bulk_delete_employees(
     role: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -242,7 +252,7 @@ def bulk_delete_employees(
         )
 
 
-@app.put("/employees/{emp_id}")
+@employees_router.put("/employees/{emp_id}")
 def update_employee(emp_id: int, emp_data: schemas.EmployeeUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     db_emp = db.query(Employee).filter(Employee.id == emp_id).first()
     if not db_emp:
@@ -258,7 +268,7 @@ def update_employee(emp_id: int, emp_data: schemas.EmployeeUpdate, db: Session =
     db.commit()
     return {"msg": f"Employee {db_emp.name} updated successfully"}
 
-@app.delete("/employees/{emp_id}")
+@employees_router.delete("/employees/{emp_id}")
 def delete_employee(emp_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     db_emp = db.query(Employee).filter(Employee.id == emp_id).first()
     if not db_emp:
@@ -267,12 +277,12 @@ def delete_employee(emp_id: int, db: Session = Depends(get_db), current_user: Us
     db.commit()
     return {"msg": "Employee deleted successfully"}
 
-@app.get("/shifts")
+@schedules_router.get("/shifts")
 def get_shifts(db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin", "supervisor"]))):
     shifts = db.query(Shift).all()
     return shifts
 
-@app.get("/leaves")
+@leaves_router.get("/leaves")
 def get_leaves(date: str = None, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin", "supervisor"]))):
     if not date:
         date = datetime.date.today().isoformat()
@@ -287,7 +297,7 @@ def get_leaves(date: str = None, db: Session = Depends(get_db), current_user: Us
         })
     return res
 
-@app.get("/employees")
+@employees_router.get("/employees")
 async def get_employees(db: Session = Depends(get_db)):
     """
     Get all employees with proper JSON response
@@ -334,7 +344,7 @@ async def get_employees(db: Session = Depends(get_db)):
             detail=f"Error getting employees: {str(e)}"
         )
 
-@app.get("/dashboard/stats")
+@reports_router.get("/dashboard/stats")
 async def get_dashboard_stats(db: Session = Depends(get_db)):
     """
     Get dashboard statistics with proper JSON response
@@ -414,7 +424,7 @@ async def get_dashboard_stats(db: Session = Depends(get_db)):
             detail=f"Error getting dashboard stats: {str(e)}"
         )
 
-@app.get("/schedules")
+@schedules_router.get("/schedules")
 async def get_schedules(date: str = None, db: Session = Depends(get_db)):
     """
     Get schedules for a specific date or today
@@ -474,7 +484,7 @@ async def get_schedules(date: str = None, db: Session = Depends(get_db)):
             detail=f"Error getting schedules: {str(e)}"
         )
 
-@app.get("/weekly-off")
+@leaves_router.get("/weekly-off")
 async def get_weekly_off(date: str = None, db: Session = Depends(get_db)):
     """
     Get weekly off employees for a specific date or today
@@ -521,8 +531,8 @@ async def get_weekly_off(date: str = None, db: Session = Depends(get_db)):
             detail=f"Error getting weekly off: {str(e)}"
         )
 
-@app.get("/dashboard-summary")
-@app.get("/summary")
+@reports_router.get("/dashboard-summary")
+@reports_router.get("/summary")
 async def get_dashboard_summary(db: Session = Depends(get_db)):
     """
     Production-ready dashboard summary with comprehensive error handling
@@ -650,7 +660,7 @@ def run_background_schedule_generation(start_date: str):
         db.close()
         is_generating_schedule = False
 
-@app.post("/upload-excel")
+@employees_router.post("/upload-excel")
 async def upload_excel(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
     """
     Upload Excel file with employee data and trigger background schedule generation
@@ -695,12 +705,12 @@ async def upload_excel(background_tasks: BackgroundTasks, file: UploadFile = Fil
         print(f"Error uploading Excel: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error uploading Excel file: {str(e)}")
 
-@app.get("/schedule-generation-status")
+@schedules_router.get("/schedule-generation-status")
 async def get_schedule_generation_status():
     global is_generating_schedule
     return {"is_generating": is_generating_schedule}
 
-@app.post("/auto-assign-weekly-offs")
+@leaves_router.post("/auto-assign-weekly-offs")
 async def auto_assign_weekly_offs(db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     try:
         print("\n" + "="*60)
@@ -734,7 +744,7 @@ async def auto_assign_weekly_offs(db: Session = Depends(get_db), current_user: U
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error auto-assigning weekly offs: {str(e)}")
 
-@app.get("/get-schedule")
+@schedules_router.get("/get-schedule")
 async def get_schedule(background_tasks: BackgroundTasks, date: str = None, db: Session = Depends(get_db)):
     """
     Production-ready schedule endpoint with comprehensive error handling
@@ -951,7 +961,7 @@ async def get_schedule(background_tasks: BackgroundTasks, date: str = None, db: 
 
 
 
-@app.post("/generate-schedule")
+@schedules_router.post("/generate-schedule")
 async def generate_schedule(request: dict, db: Session = Depends(get_db)):
     """
     Generate schedule for a specific date with proper database commits and logging
@@ -1118,7 +1128,7 @@ async def generate_schedule(request: dict, db: Session = Depends(get_db)):
             detail=f"Error generating schedule: {str(e)}"
         )
 
-@app.post("/generate-weekly-schedule")
+@schedules_router.post("/generate-weekly-schedule")
 async def generate_weekly_schedule(request: dict, db: Session = Depends(get_db)):
     """
     Generate one-week schedule from imported employee data
@@ -1169,7 +1179,7 @@ async def generate_weekly_schedule(request: dict, db: Session = Depends(get_db))
         print(f"❌ Error generating weekly schedule: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating weekly schedule: {str(e)}")
 
-@app.get("/get-weekly-schedule")
+@schedules_router.get("/get-weekly-schedule")
 async def get_weekly_schedule(start_date: str = None, db: Session = Depends(get_db)):
     """
     Get complete weekly schedule
@@ -1218,7 +1228,7 @@ def get_current_week_monday(start_date_str: str = None) -> datetime.date:
     monday = dt - datetime.timedelta(days=dt.weekday())
     return monday
 
-@app.post("/generate-4-week-schedule")
+@schedules_router.post("/generate-4-week-schedule")
 async def generate_4_week_schedule(request: dict, db: Session = Depends(get_db)):
     """
     Generate 4 weeks of schedules (28 days) in a single optimized transaction block
@@ -1270,7 +1280,7 @@ async def generate_4_week_schedule(request: dict, db: Session = Depends(get_db))
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error generating 4-week schedule: {str(e)}")
 
-@app.get("/get-4-week-schedule")
+@schedules_router.get("/get-4-week-schedule")
 async def get_4_week_schedule(start_date: str = None, db: Session = Depends(get_db)):
     """
     Retrieve highly optimized 4-week calendar schedule structured for high-performance React table
@@ -1350,7 +1360,7 @@ async def get_4_week_schedule(start_date: str = None, db: Session = Depends(get_
         print(f"❌ Error getting 4-week schedule: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting 4-week schedule: {str(e)}")
 
-@app.post("/update-shift-assignment")
+@schedules_router.post("/update-shift-assignment")
 async def update_shift_assignment(request: dict, db: Session = Depends(get_db)):
     """
     Update shift assignment for a specific employee with weekly limitation
@@ -1391,7 +1401,7 @@ async def update_shift_assignment(request: dict, db: Session = Depends(get_db)):
         print(f"Error updating shift assignment: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error updating shift assignment: {str(e)}")
 
-@app.get("/get-employee-weekly-status")
+@employees_router.get("/get-employee-weekly-status")
 async def get_employee_weekly_status(emp_id: str, date: str = None, db: Session = Depends(get_db)):
     """
     Get weekly shift change status for a specific employee
@@ -1430,7 +1440,7 @@ async def get_employee_weekly_status(emp_id: str, date: str = None, db: Session 
         print(f"Error getting employee weekly status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting employee weekly status: {str(e)}")
 
-@app.get("/get-all-employees-weekly-status")
+@employees_router.get("/get-all-employees-weekly-status")
 async def get_all_employees_weekly_status(date: str = None, db: Session = Depends(get_db)):
     """
     Get weekly shift change status for all employees
@@ -1462,7 +1472,7 @@ async def get_all_employees_weekly_status(date: str = None, db: Session = Depend
         print(f"Error getting all employees weekly status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting all employees weekly status: {str(e)}")
 
-@app.post("/request-shift-change")
+@schedules_router.post("/request-shift-change")
 async def request_shift_change(request: dict, db: Session = Depends(get_db)):
     """
     Request a shift change (for approval workflow)
@@ -1503,7 +1513,7 @@ async def request_shift_change(request: dict, db: Session = Depends(get_db)):
         print(f"Error requesting shift change: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error requesting shift change: {str(e)}")
 
-@app.post("/approve-shift-change")
+@schedules_router.post("/approve-shift-change")
 async def approve_shift_change(request: dict, db: Session = Depends(get_db)):
     """
     Approve a pending shift change request
@@ -1535,7 +1545,7 @@ async def approve_shift_change(request: dict, db: Session = Depends(get_db)):
         print(f"Error approving shift change: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error approving shift change: {str(e)}")
 
-@app.post("/reject-shift-change")
+@schedules_router.post("/reject-shift-change")
 async def reject_shift_change(request: dict, db: Session = Depends(get_db)):
     """
     Reject a pending shift change request
@@ -1568,7 +1578,7 @@ async def reject_shift_change(request: dict, db: Session = Depends(get_db)):
         print(f"Error rejecting shift change: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error rejecting shift change: {str(e)}")
 
-@app.post("/apply-leave")
+@leaves_router.post("/apply-leave")
 async def apply_leave(leave: schemas.LeaveApply, db: Session = Depends(get_db), current_user: User = Depends(require_role(["supervisor", "manager", "admin"]))):
     emp = db.query(Employee).filter(Employee.name == leave.employee_name).first()
     if not emp:
@@ -1605,7 +1615,7 @@ async def apply_leave(leave: schemas.LeaveApply, db: Session = Depends(get_db), 
         "replacements": replacement_info
     }
 
-@app.delete("/cancel-leave")
+@leaves_router.delete("/cancel-leave")
 def cancel_leave(employee_name: str, date: str, db: Session = Depends(get_db), current_user: User = Depends(require_role(["supervisor", "manager", "admin"]))):
     emp = db.query(Employee).filter(Employee.name == employee_name).first()
     if not emp:
@@ -1622,7 +1632,7 @@ def cancel_leave(employee_name: str, date: str, db: Session = Depends(get_db), c
     ai_scheduler.handle_leave_cancellation(db, emp.id, date)
     return {"msg": f"Leave cancelled for {emp.name} on {date}. AI handled weekly off transfer."}
 
-@app.post("/request-weekly-off-swap")
+@leaves_router.post("/request-weekly-off-swap")
 def request_weekly_off_swap(request: schemas.WeeklyOffSwapRequest, db: Session = Depends(get_db), current_user: User = Depends(require_role(["supervisor", "manager", "admin"]))):
     emp1 = db.query(Employee).filter(Employee.name == request.employee_1_name).first()
     emp2 = db.query(Employee).filter(Employee.name == request.employee_2_name).first()
@@ -1653,7 +1663,7 @@ def request_weekly_off_swap(request: schemas.WeeklyOffSwapRequest, db: Session =
         "ai_validation": validation_status
     }
 
-@app.get("/weekly-off-swaps")
+@leaves_router.get("/weekly-off-swaps")
 def get_weekly_off_swaps(status: str = None, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     query = db.query(WeeklyOffSwap)
     if status:
@@ -1679,7 +1689,7 @@ def get_weekly_off_swaps(status: str = None, db: Session = Depends(get_db), curr
     
     return result
 
-@app.post("/approve-weekly-off-swap")
+@leaves_router.post("/approve-weekly-off-swap")
 def approve_weekly_off_swap(approval: schemas.WeeklyOffSwapApproval, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     swap = db.query(WeeklyOffSwap).filter(WeeklyOffSwap.id == approval.swap_id).first()
     if not swap:
@@ -1735,7 +1745,7 @@ def approve_weekly_off_swap(approval: schemas.WeeklyOffSwapApproval, db: Session
             "reason": swap.rejection_reason
         }
 
-@app.put("/update-schedule")
+@schedules_router.put("/update-schedule")
 def update_schedule(data: schemas.ScheduleUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     # Manual override of a specific assignment
     sched = db.query(Schedule).filter(
@@ -1756,7 +1766,7 @@ def update_schedule(data: schemas.ScheduleUpdate, db: Session = Depends(get_db),
     db.commit()
     return {"msg": "Schedule updated successfully"}
 
-@app.post("/overtime/calculate")
+@schedules_router.post("/overtime/calculate")
 def calculate_overtime(data: schemas.OvertimeRequest, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin", "supervisor"]))):
     # AI validation for overtime request
     validation_result = ai_scheduler.validate_overtime_request(db, data.employee_id, data.date, data.overtime_hours)
@@ -1799,7 +1809,7 @@ def calculate_overtime(data: schemas.OvertimeRequest, db: Session = Depends(get_
         "validation_status": validation_result
     }
 
-@app.get("/overtime")
+@schedules_router.get("/overtime")
 def get_overtime_requests(status: str = "pending", db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin", "supervisor"]))):
     query = db.query(OvertimeLog)
     if status != "all":
@@ -1828,7 +1838,7 @@ def get_overtime_requests(status: str = "pending", db: Session = Depends(get_db)
     
     return result
 
-@app.post("/overtime/approve")
+@schedules_router.post("/overtime/approve")
 def approve_overtime(data: schemas.OvertimeApproval, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     overtime = db.query(OvertimeLog).filter(OvertimeLog.id == data.overtime_id).first()
     if not overtime:
@@ -1855,7 +1865,7 @@ def approve_overtime(data: schemas.OvertimeApproval, db: Session = Depends(get_d
         "status": overtime.status
     }
 
-@app.post("/departments")
+@departments_router.post("/departments")
 def create_department(data: schemas.DepartmentCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
     existing = db.query(Department).filter(Department.code == data.code).first()
     if existing:
@@ -1868,14 +1878,14 @@ def create_department(data: schemas.DepartmentCreate, db: Session = Depends(get_
     
     return {"msg": "Department created successfully", "department_id": department.id}
 
-@app.get("/departments")
+@departments_router.get("/departments")
 def get_departments(db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "manager", "supervisor"]))):
     departments = db.query(Department).all()
     return departments
 
 # --- Reports & Analytics Endpoints ---
 
-@app.get("/reports/attendance-trends")
+@reports_router.get("/reports/attendance-trends")
 def get_attendance_trends(db: Session = Depends(get_db)):
     """Returns attendance trends for the last 7 days."""
     today = datetime.date.today()
@@ -1892,7 +1902,7 @@ def get_attendance_trends(db: Session = Depends(get_db)):
         })
     return trends
 
-@app.get("/reports/leave-stats")
+@leaves_router.get("/reports/leave-stats")
 def get_leave_stats(db: Session = Depends(get_db)):
     """Returns leave statistics for reports."""
     # Frequent leave takers
@@ -1914,7 +1924,7 @@ def get_leave_stats(db: Session = Depends(get_db)):
         ]
     }
 
-@app.get("/reports/replacement-history")
+@reports_router.get("/reports/replacement-history")
 def get_replacement_history(db: Session = Depends(get_db)):
     """Returns history of shift replacements."""
     replacements = db.query(Schedule).filter(Schedule.replaced_employee_id.isnot(None)).limit(20).all()
@@ -1930,7 +1940,7 @@ def get_replacement_history(db: Session = Depends(get_db)):
         })
     return res
 
-@app.get("/reports/ai-metrics")
+@reports_router.get("/reports/ai-metrics")
 def get_ai_metrics(db: Session = Depends(get_db)):
     """Returns AI optimization metrics."""
     return {
@@ -1945,7 +1955,7 @@ def get_ai_metrics(db: Session = Depends(get_db)):
         ]
     }
 
-@app.get("/reports/department-coverage")
+@reports_router.get("/reports/department-coverage")
 def get_department_coverage(db: Session = Depends(get_db)):
     """Returns department coverage statistics."""
     depts = db.query(Department).all()
@@ -2015,7 +2025,7 @@ from fastapi.responses import StreamingResponse
 import io
 import pandas as pd
 
-@app.get("/export/{report_type}")
+@reports_router.get("/export/{report_type}")
 def export_report(report_type: str, format: str, db: Session = Depends(get_db)):
     """
     Unified export endpoint for various report types and formats.
@@ -2107,7 +2117,7 @@ def export_report(report_type: str, format: str, db: Session = Depends(get_db)):
 # FAIR WEEKLY OFF DISTRIBUTION — Enterprise AI Endpoints
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@app.get("/weekly-off-distribution")
+@leaves_router.get("/weekly-off-distribution")
 async def get_weekly_off_distribution(db: Session = Depends(get_db)):
     """
     Returns the current weekly off distribution stats for all employees.
@@ -2120,7 +2130,7 @@ async def get_weekly_off_distribution(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error fetching distribution: {str(e)}")
 
 
-@app.post("/assign-weekly-offs")
+@leaves_router.post("/assign-weekly-offs")
 async def assign_weekly_offs(request: dict = {}, db: Session = Depends(get_db)):
     """
     Runs the enterprise fair weekly off assignment algorithm.
@@ -2140,7 +2150,7 @@ async def assign_weekly_offs(request: dict = {}, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error assigning weekly offs: {str(e)}")
 
 
-@app.post("/rotate-weekly-offs")
+@leaves_router.post("/rotate-weekly-offs")
 async def rotate_weekly_offs(request: dict = {}, db: Session = Depends(get_db)):
     """
     Rotates all employee weekly off days forward by N steps for fairness.
@@ -2162,7 +2172,7 @@ async def rotate_weekly_offs(request: dict = {}, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error rotating weekly offs: {str(e)}")
 
 
-@app.patch("/employees/{emp_id}/weekly-off")
+@employees_router.patch("/employees/{emp_id}/weekly-off")
 async def update_employee_weekly_off(
     emp_id: int,
     request: dict,
@@ -2206,7 +2216,7 @@ async def update_employee_weekly_off(
         raise HTTPException(status_code=500, detail=f"Error updating weekly off: {str(e)}")
 
 
-@app.get("/weekly-off-roster")
+@leaves_router.get("/weekly-off-roster")
 async def get_weekly_off_roster(
     day: str = None,
     department: str = None,
@@ -2271,3 +2281,12 @@ async def get_weekly_off_roster(
 
 
 
+
+
+# Include Routers
+app.include_router(auth_router)
+app.include_router(employees_router)
+app.include_router(schedules_router)
+app.include_router(leaves_router)
+app.include_router(reports_router)
+app.include_router(departments_router)
