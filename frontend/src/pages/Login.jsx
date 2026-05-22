@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import api from '../services/apiService';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogIn, User, Lock, Zap, Sparkles, ArrowRight } from 'lucide-react';
 
-const API_URL = 'http://127.0.0.1:8000';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -18,7 +17,7 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const response = await axios.post(`${API_URL}/login`, { username, password });
+      const response = await api.post(`/login`, { username, password });
       localStorage.setItem('token', response.data.access_token);
       localStorage.setItem('role', response.data.role);
       localStorage.setItem('username', username);

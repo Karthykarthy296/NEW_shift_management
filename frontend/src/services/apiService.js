@@ -8,11 +8,11 @@ import axios from 'axios';
 // Configuration for different environments
 const API_CONFIG = {
   development: {
-    baseURL: 'http://127.0.0.1:8000',
+    baseURL: import.meta.env.VITE_API_URL || 'http://192.168.0.28:8000',
     timeout: 30000,
   },
   production: {
-    baseURL: process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000',
+    baseURL: import.meta.env.VITE_API_URL || 'http://192.168.0.28:8000',
     timeout: 30000,
   }
 };
@@ -32,13 +32,13 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    
+
     // Add auth token if available
     const token = localStorage.getItem('authToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
+
     return config;
   },
   (error) => {
@@ -55,14 +55,14 @@ api.interceptors.response.use(
   },
   (error) => {
     console.error('❌ API Error:', error);
-    
+
     // Handle different error types
     if (error.response) {
       // Server responded with error status
       const { status, data } = error.response;
-      
+
       console.error(`Server Error ${status}:`, data);
-      
+
       // Specific handling for common errors
       switch (status) {
         case 400:
@@ -90,14 +90,14 @@ api.interceptors.response.use(
         default:
           error.message = data?.error || data?.detail || `Server error ${status}`;
       }
-      
+
       // Add server error details to error object
       error.serverError = data;
-      
+
     } else if (error.request) {
       // Network error (no response received)
       console.error('Network Error:', error.request);
-      
+
       if (error.code === 'ECONNABORTED') {
         error.message = 'Request timeout. Please check your connection.';
       } else if (error.message.includes('Network Error')) {
@@ -105,13 +105,13 @@ api.interceptors.response.use(
       } else {
         error.message = 'Unable to connect to server. Please try again.';
       }
-      
+
     } else {
       // Other error (request setup)
       console.error('Request Setup Error:', error.message);
       error.message = 'Request setup error';
     }
-    
+
     return Promise.reject(error);
   }
 );
