@@ -4,6 +4,7 @@ from datetime import datetime
 
 class UserRegister(BaseModel):
     name: str
+    username: str
     role: str
     password: str
 

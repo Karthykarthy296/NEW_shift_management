@@ -10,6 +10,7 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [registerName, setRegisterName] = useState('');
+  const [registerUsername, setRegisterUsername] = useState('');
   const [registerRole, setRegisterRole] = useState('admin');
   const [registerPassword, setRegisterPassword] = useState('');
   const [error, setError] = useState('');
@@ -47,12 +48,14 @@ export default function Login() {
     try {
       await api.post(`/register`, {
         name: registerName,
+        username: registerUsername,
         role: registerRole,
         password: registerPassword,
       });
       setSuccess('Registration successful. You can now log in.');
       setIsRegister(false);
       setRegisterName('');
+      setRegisterUsername('');
       setRegisterRole('admin');
       setRegisterPassword('');
     } catch (err) {
@@ -127,6 +130,24 @@ export default function Login() {
                       autoComplete="name"
                       value={registerName} 
                       onChange={(e) => setRegisterName(e.target.value)} 
+                      required 
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username</label>
+                  <div className="relative group">
+                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+                      <User size={20} />
+                    </div>
+                    <input 
+                      type="text" 
+                      className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 pl-14 pr-6 text-sm font-bold focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                      placeholder="Choose a username"
+                      autoComplete="username"
+                      value={registerUsername} 
+                      onChange={(e) => setRegisterUsername(e.target.value)} 
                       required 
                     />
                   </div>

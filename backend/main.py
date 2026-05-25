@@ -135,11 +135,11 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
 
 @auth_router.post("/register")
 def register(user: schemas.UserRegister, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.username == user.name).first()
+    existing = db.query(User).filter(User.username == user.username).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Name already registered")
+        raise HTTPException(status_code=400, detail="Username already registered")
     hashed_pwd = auth.get_password_hash(user.password)
-    new_user = User(username=user.name, password_hash=hashed_pwd, role=user.role)
+    new_user = User(username=user.username, name=user.name, password_hash=hashed_pwd, role=user.role)
     db.add(new_user)
     db.commit()
     return {"msg": "Registration successful"}
