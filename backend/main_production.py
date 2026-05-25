@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_
-from database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department
-import schemas, auth, ai_scheduler
+from app.database.database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department
+from app.models import schemas
+from app.middleware import auth
+from app.services import ai_scheduler
 import shutil
 import os
 import datetime

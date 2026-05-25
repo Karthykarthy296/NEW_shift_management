@@ -1,8 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department, ScheduleGenerationLog, WeeklyShiftChange
-import schemas, auth, ai_scheduler
+from app.database.database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department, ScheduleGenerationLog, WeeklyShiftChange
+from app.models import schemas
+from app.middleware import auth
+from app.services import ai_scheduler
 import shutil
 import os
 import datetime
@@ -130,6 +132,17 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Incorrect credentials")
     access_token = auth.create_access_token(data={"sub": db_user.username, "role": db_user.role})
     return {"access_token": access_token, "token_type": "bearer", "role": db_user.role}
+
+@auth_router.post("/register")
+def register(user: schemas.UserRegister, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.username == user.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Name already registered")
+    hashed_pwd = auth.get_password_hash(user.password)
+    new_user = User(username=user.name, password_hash=hashed_pwd, role=user.role)
+    db.add(new_user)
+    db.commit()
+    return {"msg": "Registration successful"}
 
 @auth_router.post("/create-user")
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
@@ -1974,16 +1987,6 @@ def get_department_coverage(db: Session = Depends(get_db)):
 def startup_event():
     try:
         db = SessionLocal()
-        admin = db.query(User).filter(User.username == "admin").first()
-        if not admin:
-            hashed_pwd = auth.get_password_hash("admin123")
-            new_admin = User(username="admin", password_hash=hashed_pwd, role="admin")
-            db.add(new_admin)
-            
-            # Create default manager and supervisor for testing
-            db.add(User(username="manager", password_hash=auth.get_password_hash("manager123"), role="manager"))
-            db.add(User(username="supervisor", password_hash=auth.get_password_hash("supervisor123"), role="supervisor"))
-            db.commit()
         
         # Only attempt schedule generation if employees and shifts exist
         has_employees = db.query(Employee).count() > 0

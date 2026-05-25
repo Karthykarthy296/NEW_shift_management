@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from database import SessionLocal, Employee, Leave, Schedule, Shift
+from app.database.database import SessionLocal, Employee, Leave, Schedule, Shift
 from datetime import date
 
 def test_dashboard_summary():

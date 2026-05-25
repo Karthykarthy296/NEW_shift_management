@@ -1,5 +1,5 @@
 from apscheduler.schedulers.background import BackgroundScheduler
-from services import generate_weekoffs, get_current_week_start
+from app.services.services import generate_weekoffs, get_current_week_start
 import datetime
 
 scheduler = BackgroundScheduler()

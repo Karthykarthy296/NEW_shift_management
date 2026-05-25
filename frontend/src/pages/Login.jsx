@@ -2,19 +2,25 @@ import React, { useState } from 'react';
 import api from '../services/apiService';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogIn, User, Lock, Zap, Sparkles, ArrowRight } from 'lucide-react';
+import { LogIn, User, Lock, Zap, Sparkles, ArrowRight, UserPlus, CheckCircle } from 'lucide-react';
 
 
 export default function Login() {
+  const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [registerName, setRegisterName] = useState('');
+  const [registerRole, setRegisterRole] = useState('admin');
+  const [registerPassword, setRegisterPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setLoading(true);
     try {
       const response = await api.post(`/login`, { username, password });
@@ -28,6 +34,29 @@ export default function Login() {
       else if (role === 'supervisor') navigate('/supervisor/dashboard');
     } catch (err) {
       setError('System rejected authentication. Verify your credentials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      await api.post(`/register`, {
+        name: registerName,
+        role: registerRole,
+        password: registerPassword,
+      });
+      setSuccess('Registration successful. You can now log in.');
+      setIsRegister(false);
+      setRegisterName('');
+      setRegisterRole('admin');
+      setRegisterPassword('');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Registration failed. Try again.');
     } finally {
       setLoading(false);
     }
@@ -57,9 +86,10 @@ export default function Login() {
             <p className="text-slate-500 font-bold text-sm uppercase tracking-[0.2em]">Enterprise Workforce Intelligence</p>
           </div>
 
-          <AnimatePresence>
+          <AnimatePresence mode="wait">
             {error && (
               <motion.div 
+                key="error"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
@@ -68,61 +98,147 @@ export default function Login() {
                 {error}
               </motion.div>
             )}
+            {success && (
+              <motion.div 
+                key="success"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="bg-emerald-50 border-2 border-emerald-100 text-emerald-600 p-4 rounded-2xl text-xs font-black uppercase tracking-widest mb-8 text-center"
+              >
+                {success}
+              </motion.div>
+            )}
           </AnimatePresence>
 
-          <form onSubmit={handleLogin} className="space-y-8">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">System Identity</label>
-              <div className="relative group">
-                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors">
-                  <User size={20} />
+          <form onSubmit={isRegister ? handleRegister : handleLogin} className="space-y-8">
+            {isRegister ? (
+              <>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Full Name</label>
+                  <div className="relative group">
+                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+                      <User size={20} />
+                    </div>
+                    <input 
+                      type="text" 
+                      className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 pl-14 pr-6 text-sm font-bold focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                      placeholder="Enter your name"
+                      autoComplete="name"
+                      value={registerName} 
+                      onChange={(e) => setRegisterName(e.target.value)} 
+                      required 
+                    />
+                  </div>
                 </div>
-                <input 
-                  type="text" 
-                  className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 pl-14 pr-6 text-sm font-bold focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                  placeholder="Username"
-                  autoComplete="username"
-                  value={username} 
-                  onChange={(e) => setUsername(e.target.value)} 
-                  required 
-                />
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Security Token</label>
-              <div className="relative group">
-                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors">
-                  <Lock size={20} />
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Role</label>
+                  <div className="relative group">
+                    <select
+                      value={registerRole}
+                      onChange={(e) => setRegisterRole(e.target.value)}
+                      className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 pl-14 pr-6 text-sm font-bold focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all appearance-none cursor-pointer"
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="manager">Manager</option>
+                      <option value="supervisor">Supervisor</option>
+                    </select>
+                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                      <UserPlus size={20} />
+                    </div>
+                  </div>
                 </div>
-                <input 
-                  type="password" 
-                  className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 pl-14 pr-6 text-sm font-bold focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                  required 
-                />
-              </div>
-            </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Password</label>
+                  <div className="relative group">
+                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+                      <Lock size={20} />
+                    </div>
+                    <input 
+                      type="password" 
+                      className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 pl-14 pr-6 text-sm font-bold focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                      placeholder="••••••••"
+                      autoComplete="new-password"
+                      value={registerPassword} 
+                      onChange={(e) => setRegisterPassword(e.target.value)} 
+                      required 
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">System Identity</label>
+                  <div className="relative group">
+                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+                      <User size={20} />
+                    </div>
+                    <input 
+                      type="text" 
+                      className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 pl-14 pr-6 text-sm font-bold focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                      placeholder="Username"
+                      autoComplete="username"
+                      value={username} 
+                      onChange={(e) => setUsername(e.target.value)} 
+                      required 
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Security Token</label>
+                  <div className="relative group">
+                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+                      <Lock size={20} />
+                    </div>
+                    <input 
+                      type="password" 
+                      className="w-full bg-slate-50 border-2 border-transparent rounded-2xl py-4 pl-14 pr-6 text-sm font-bold focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" 
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      value={password} 
+                      onChange={(e) => setPassword(e.target.value)} 
+                      required 
+                    />
+                  </div>
+                </div>
+              </>
+            )}
 
             <button 
               type="submit" 
               disabled={loading}
               className="w-full bg-slate-900 text-white rounded-[2rem] py-5 font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-indigo-600 hover:shadow-2xl hover:shadow-indigo-500/30 transition-all duration-500 group relative overflow-hidden"
             >
-              <span className="relative z-10">{loading ? 'Processing...' : 'Authorize Access'}</span>
-              {!loading && <ArrowRight size={20} className="relative z-10 group-hover:translate-x-1 transition-transform" />}
+              <span className="relative z-10">{loading ? 'Processing...' : isRegister ? 'Create Account' : 'Authorize Access'}</span>
+              {!loading && (isRegister ? <CheckCircle size={20} className="relative z-10" /> : <ArrowRight size={20} className="relative z-10 group-hover:translate-x-1 transition-transform" />)}
               <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
             </button>
           </form>
 
-          <div className="mt-12 pt-8 border-t border-slate-100 text-center">
-             <div className="flex items-center justify-center gap-2 text-indigo-500 font-black text-[10px] uppercase tracking-[0.3em]">
-                <Sparkles size={14} />
-                Powered by ShiftAI Core Engine
-             </div>
+          <div className="mt-10 pt-8 border-t border-slate-100 text-center space-y-4">
+            <button
+              type="button"
+              onClick={() => { setIsRegister(!isRegister); setError(''); setSuccess(''); }}
+              className="text-indigo-500 hover:text-indigo-700 font-black text-xs uppercase tracking-widest transition-colors"
+            >
+              {isRegister ? (
+                <span className="flex items-center justify-center gap-2">
+                  <LogIn size={16} /> Back to Login
+                </span>
+              ) : (
+                <span className="flex items-center justify-center gap-2">
+                  <UserPlus size={16} /> Register New Account
+                </span>
+              )}
+            </button>
+            <div className="flex items-center justify-center gap-2 text-indigo-500 font-black text-[10px] uppercase tracking-[0.3em]">
+              <Sparkles size={14} />
+              Powered by ShiftAI Core Engine
+            </div>
           </div>
         </div>
         

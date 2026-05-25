@@ -1,7 +1,7 @@
 import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from database import Employee, Shift, Schedule, Leave, Department, OvertimeLog, WeeklyOffHistory
+from app.database.database import Employee, Shift, Schedule, Leave, Department, OvertimeLog, WeeklyOffHistory
 from datetime import date, timedelta
 import random
 from functools import lru_cache

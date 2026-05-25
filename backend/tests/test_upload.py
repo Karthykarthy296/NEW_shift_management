@@ -5,8 +5,8 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from database import SessionLocal, Shift, Employee, Department
-from excel_upload_manager import ExcelUploadManager
+from app.database.database import SessionLocal, Shift, Employee, Department
+from app.services.excel_upload_manager import ExcelUploadManager
 
 def test_upload():
     db = SessionLocal()

@@ -5,8 +5,8 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from database import SessionLocal, Employee, Shift, Schedule
-import ai_scheduler
+from app.database.database import SessionLocal, Employee, Shift, Schedule
+from app.services import ai_scheduler
 from datetime import date
 
 def test_auto_assign():

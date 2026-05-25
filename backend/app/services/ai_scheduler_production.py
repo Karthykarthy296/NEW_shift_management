@@ -6,7 +6,7 @@ Optimized for 1000+ employees with enterprise-grade performance
 import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
-from database import Employee, Shift, Schedule, Leave, Department, OvertimeLog
+from app.database.database import Employee, Shift, Schedule, Leave, Department, OvertimeLog
 from datetime import date, timedelta, datetime
 import random
 from functools import lru_cache

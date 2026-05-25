@@ -2,6 +2,11 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
+class UserRegister(BaseModel):
+    name: str
+    role: str
+    password: str
+
 class UserCreate(BaseModel):
     username: str
     password: str

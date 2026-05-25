@@ -6,8 +6,10 @@ Comprehensive debugging and fixes for dashboard and schedule generation issues
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department
-import schemas, auth, ai_scheduler
+from app.database.database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department
+from app.models import schemas
+from app.middleware import auth
+from app.services import ai_scheduler
 import shutil
 import os
 import datetime

@@ -6,7 +6,7 @@ Handles one shift change per week limitation for employees
 from datetime import datetime, timedelta
 from typing import Tuple, Optional, List, Dict
 from sqlalchemy.orm import Session
-from database import SessionLocal, Employee, Shift, Schedule, WeeklyShiftChange, User
+from app.database.database import SessionLocal, Employee, Shift, Schedule, WeeklyShiftChange, User
 import logging
 
 logger = logging.getLogger(__name__)

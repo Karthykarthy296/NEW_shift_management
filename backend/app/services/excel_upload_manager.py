@@ -8,8 +8,8 @@ import openpyxl
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
-from database import SessionLocal, Employee, Shift, Schedule, Department, Leave
-from ai_scheduler import auto_assign_weekly_offs
+from app.database.database import SessionLocal, Employee, Shift, Schedule, Department, Leave
+from app.services.ai_scheduler import auto_assign_weekly_offs
 import logging
 
 logger = logging.getLogger(__name__)

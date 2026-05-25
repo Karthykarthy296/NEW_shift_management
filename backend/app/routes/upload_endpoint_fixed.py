@@ -45,7 +45,7 @@ async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_d
             print(f"✓ Found {len(shifts)} existing shifts")
         
         # Import employees from Excel
-        from excel_upload_manager import ExcelUploadManager
+        from app.services.excel_upload_manager import ExcelUploadManager
         manager = ExcelUploadManager(db)
         
         print(f"\n📊 Starting Excel import...")

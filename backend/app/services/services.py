@@ -1,4 +1,4 @@
-from models import db, Employee, Weekoff, RotationHistory
+from app.models.models import db, Employee, Weekoff, RotationHistory
 import datetime
 
 DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']

@@ -1,4 +1,4 @@
-from database import SessionLocal, Employee
+from app.database.database import SessionLocal, Employee
 
 db = SessionLocal()
 emps = db.query(Employee).all()

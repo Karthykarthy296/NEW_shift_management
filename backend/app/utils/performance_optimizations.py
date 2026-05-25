@@ -7,7 +7,7 @@ import asyncio
 from functools import lru_cache
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func, and_, or_, text
-from database import Employee, Shift, Schedule, Department, Leave
+from app.database.database import Employee, Shift, Schedule, Department, Leave
 from datetime import datetime, timedelta
 import time
 import logging
@@ -392,7 +392,7 @@ def setup_performance_monitoring():
 def batch_insert_schedules(db: Session, schedules: List[Dict], batch_size: int = 1000):
     """Optimized batch insert for large schedule datasets"""
     try:
-        from database import Schedule
+        from app.database.database import Schedule
         
         total_inserted = 0
         for i in range(0, len(schedules), batch_size):

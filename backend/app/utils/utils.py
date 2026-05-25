@@ -2,7 +2,7 @@ import heapq
 import datetime
 import math
 from collections import defaultdict
-from models import db, Employee, Weekoff, Leave
+from app.models.models import db, Employee, Weekoff, Leave
 
 DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 CRITICAL_DEPARTMENTS = ['Security', 'Support', 'Operations']

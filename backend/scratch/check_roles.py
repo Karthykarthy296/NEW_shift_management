@@ -1,4 +1,4 @@
-from database import SessionLocal, Employee
+from app.database.database import SessionLocal, Employee
 db = SessionLocal()
 roles = db.query(Employee.role).distinct().all()
 print("Unique roles in database:")
