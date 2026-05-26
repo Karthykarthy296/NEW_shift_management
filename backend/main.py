@@ -11,6 +11,10 @@ import datetime
 from typing import Optional, List, Dict
 from fastapi.security import HTTPAuthorizationCredentials
 
+from app.routes.activity_routes import router as activity_router
+from app.middleware.activity_middleware import ActivityLoggingMiddleware
+from app.utils.activity_logger import log_activity
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -45,6 +49,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+app.add_middleware(ActivityLoggingMiddleware)
 
 @app.get("/")
 def read_root():
@@ -126,15 +132,32 @@ async def schedules_generated_count(db: Session = Depends(get_db)):
         return {"count": 1, "month": datetime.date.today().strftime("%B %Y")}
 
 @auth_router.post("/login")
-def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
+async def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.username == user.username).first()
     if not db_user or not auth.verify_password(user.password, db_user.password_hash):
+        await log_activity(
+            db=db,
+            activity="Failed Login Attempt",
+            module_name="Authentication",
+            status="failed",
+            description=f"Failed login attempt for username: {user.username}"
+        )
         raise HTTPException(status_code=400, detail="Incorrect credentials")
     access_token = auth.create_access_token(data={"sub": db_user.username, "role": db_user.role})
+    await log_activity(
+        db=db,
+        activity="User Login",
+        module_name="Authentication",
+        status="success",
+        description=f"User {db_user.username} logged in successfully",
+        user_id=db_user.id,
+        username=db_user.username,
+        role=db_user.role
+    )
     return {"access_token": access_token, "token_type": "bearer", "role": db_user.role}
 
 @auth_router.post("/register")
-def register(user: schemas.UserRegister, db: Session = Depends(get_db)):
+async def register(user: schemas.UserRegister, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == user.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username already registered")
@@ -142,10 +165,19 @@ def register(user: schemas.UserRegister, db: Session = Depends(get_db)):
     new_user = User(username=user.username, name=user.name, password_hash=hashed_pwd, role=user.role)
     db.add(new_user)
     db.commit()
+    await log_activity(
+        db=db,
+        activity="User Created",
+        module_name="Admin",
+        status="success",
+        description=f"New user registered: {user.username} ({user.role})",
+        username=user.username,
+        role=user.role
+    )
     return {"msg": "Registration successful"}
 
 @auth_router.post("/create-user")
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
+async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
     existing = db.query(User).filter(User.username == user.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username already registered")
@@ -153,6 +185,16 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current
     new_user = User(username=user.username, password_hash=hashed_pwd, role=user.role)
     db.add(new_user)
     db.commit()
+    await log_activity(
+        db=db,
+        activity="User Created",
+        module_name="Admin",
+        status="success",
+        description=f"Admin created user: {user.username} ({user.role})",
+        user_id=current_user.id,
+        username=current_user.username,
+        role=current_user.role
+    )
     return {"msg": f"User {user.username} created successfully"}
 
 @auth_router.get("/users")
@@ -161,17 +203,28 @@ def get_users(db: Session = Depends(get_db), current_user: User = Depends(requir
     return [{"id": u.id, "username": u.username, "role": u.role} for u in users]
 
 @auth_router.delete("/users/{user_id}")
-def delete_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
+async def delete_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    target_username = user.username
     db.delete(user)
     db.commit()
+    await log_activity(
+        db=db,
+        activity="User Deleted",
+        module_name="Admin",
+        status="success",
+        description=f"Admin deleted user: {target_username}",
+        user_id=current_user.id,
+        username=current_user.username,
+        role=current_user.role
+    )
     return {"msg": "User deleted successfully"}
 
 
 @employees_router.post("/employees")
-def create_employee(emp: schemas.EmployeeCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
+async def create_employee(emp: schemas.EmployeeCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     existing = db.query(Employee).filter(Employee.emp_id == emp.emp_id).first()
     if existing:
         raise HTTPException(status_code=400, detail="Employee ID already exists")
@@ -185,6 +238,16 @@ def create_employee(emp: schemas.EmployeeCreate, db: Session = Depends(get_db), 
     )
     db.add(new_emp)
     db.commit()
+    await log_activity(
+        db=db,
+        activity="Employee Created",
+        module_name="Employee Management",
+        status="success",
+        description=f"Created employee: {new_emp.name} (ID: {new_emp.emp_id})",
+        user_id=current_user.id,
+        username=current_user.username,
+        role=current_user.role
+    )
     return {"msg": f"Employee {emp.name} created successfully"}
 
 
@@ -206,7 +269,7 @@ def get_employee_roles(db: Session = Depends(get_db)):
 
 
 @employees_router.delete("/employees/bulk-delete")
-def bulk_delete_employees(
+async def bulk_delete_employees(
     role: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["admin"]))
@@ -252,6 +315,16 @@ def bulk_delete_employees(
         deleted_count = db.query(Employee).filter(Employee.id.in_(emp_ids)).delete(synchronize_session=False)
 
         db.commit()
+        await log_activity(
+            db=db,
+            activity="Bulk Delete Employees",
+            module_name="Employee Management",
+            status="success",
+            description=f"Admin bulk deleted {deleted_count} employees (Role filter: {role or 'All'})",
+            user_id=current_user.id,
+            username=current_user.username,
+            role=current_user.role
+        )
         return {
             "msg": f"Successfully deleted {deleted_count} employees and associated records.",
             "deleted_count": deleted_count
@@ -259,6 +332,16 @@ def bulk_delete_employees(
     except Exception as e:
         db.rollback()
         print(f"Error during bulk deletion: {e}")
+        await log_activity(
+            db=db,
+            activity="Bulk Delete Employees",
+            module_name="Employee Management",
+            status="failed",
+            description=f"Admin bulk delete failed: {str(e)}",
+            user_id=current_user.id,
+            username=current_user.username,
+            role=current_user.role
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database transaction aborted due to error: {str(e)}"
@@ -266,7 +349,7 @@ def bulk_delete_employees(
 
 
 @employees_router.put("/employees/{emp_id}")
-def update_employee(emp_id: int, emp_data: schemas.EmployeeUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
+async def update_employee(emp_id: int, emp_data: schemas.EmployeeUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     db_emp = db.query(Employee).filter(Employee.id == emp_id).first()
     if not db_emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -279,15 +362,37 @@ def update_employee(emp_id: int, emp_data: schemas.EmployeeUpdate, db: Session =
     if emp_data.weekly_off is not None: db_emp.weekly_off = emp_data.weekly_off
     
     db.commit()
+    await log_activity(
+        db=db,
+        activity="Employee Updated",
+        module_name="Employee Management",
+        status="success",
+        description=f"Updated employee: {db_emp.name} (ID: {db_emp.emp_id})",
+        user_id=current_user.id,
+        username=current_user.username,
+        role=current_user.role
+    )
     return {"msg": f"Employee {db_emp.name} updated successfully"}
 
 @employees_router.delete("/employees/{emp_id}")
-def delete_employee(emp_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
+async def delete_employee(emp_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     db_emp = db.query(Employee).filter(Employee.id == emp_id).first()
     if not db_emp:
         raise HTTPException(status_code=404, detail="Employee not found")
+    emp_name = db_emp.name
+    emp_id_val = db_emp.emp_id
     db.delete(db_emp)
     db.commit()
+    await log_activity(
+        db=db,
+        activity="Employee Deleted",
+        module_name="Employee Management",
+        status="success",
+        description=f"Deleted employee: {emp_name} (ID: {emp_id_val})",
+        user_id=current_user.id,
+        username=current_user.username,
+        role=current_user.role
+    )
     return {"msg": "Employee deleted successfully"}
 
 @schedules_router.get("/shifts")
@@ -661,26 +766,61 @@ def run_background_schedule_generation(start_date: str):
     global is_generating_schedule
     is_generating_schedule = True
     db = SessionLocal()
+    import asyncio
     try:
-        from excel_upload_manager import ExcelUploadManager
+        from app.services.excel_upload_manager import ExcelUploadManager
         manager = ExcelUploadManager(db)
         print(f"[Background AI] Starting bulk schedule generation for {start_date}...")
+        
+        asyncio.run(log_activity(
+            db=db,
+            activity="AI Scheduler Run",
+            module_name="AI Scheduler",
+            status="success",
+            description=f"System triggered background AI schedule generation for date: {start_date}"
+        ))
+        
         success, msg, summary = manager.generate_weekly_schedule(start_date)
         print(f"[Background AI] Completed: success={success}, msg={msg}")
+        
+        asyncio.run(log_activity(
+            db=db,
+            activity="AI Scheduler Run Completed",
+            module_name="AI Scheduler",
+            status="success" if success else "failed",
+            description=f"Background AI scheduling completed: {msg}"
+        ))
     except Exception as e:
         print(f"[Background AI] Error in background schedule generation: {e}")
+        asyncio.run(log_activity(
+            db=db,
+            activity="AI Scheduler Run Failed",
+            module_name="AI Scheduler",
+            status="failed",
+            description=f"Background AI scheduling failed: {str(e)}"
+        ))
     finally:
         db.close()
         is_generating_schedule = False
 
 @employees_router.post("/upload-excel")
-async def upload_excel(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_excel(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     """
     Upload Excel file with employee data and trigger background schedule generation
     """
     try:
         # Validate file type
         if not file.filename.endswith(('.xlsx', '.xls')):
+            await log_activity(
+                db=db,
+                activity="Excel Upload",
+                module_name="Employee Management",
+                status="failed",
+                description=f"Upload failed: Invalid file extension for {file.filename}",
+                user_id=current_user.id,
+                username=current_user.username,
+                role=current_user.role
+            )
             raise HTTPException(status_code=400, detail="Please upload an Excel file (.xlsx or .xls)")
         
         # Save uploaded file
@@ -692,13 +832,34 @@ async def upload_excel(background_tasks: BackgroundTasks, file: UploadFile = Fil
             shutil.copyfileobj(file.file, buffer)
         
         # Import employees from Excel
-        from excel_upload_manager import ExcelUploadManager
+        from app.services.excel_upload_manager import ExcelUploadManager
         manager = ExcelUploadManager(db)
         
         success, message, imported_count = manager.import_employees_from_excel(file_path)
         
         if not success:
+            await log_activity(
+                db=db,
+                activity="Excel Upload",
+                module_name="Employee Management",
+                status="failed",
+                description=f"Upload failed: {message}",
+                user_id=current_user.id,
+                username=current_user.username,
+                role=current_user.role
+            )
             raise HTTPException(status_code=400, detail=message)
+        
+        await log_activity(
+            db=db,
+            activity="Excel Upload",
+            module_name="Employee Management",
+            status="success",
+            description=f"Successfully uploaded {file.filename} and imported {imported_count} employees.",
+            user_id=current_user.id,
+            username=current_user.username,
+            role=current_user.role
+        )
         
         # Trigger weekly schedule generation as a background task
         today = datetime.date.today().isoformat()
@@ -716,6 +877,16 @@ async def upload_excel(background_tasks: BackgroundTasks, file: UploadFile = Fil
         raise
     except Exception as e:
         print(f"Error uploading Excel: {str(e)}")
+        await log_activity(
+            db=db,
+            activity="Excel Upload",
+            module_name="Employee Management",
+            status="failed",
+            description=f"Upload error: {str(e)}",
+            user_id=current_user.id,
+            username=current_user.username,
+            role=current_user.role
+        )
         raise HTTPException(status_code=500, detail=f"Error uploading Excel file: {str(e)}")
 
 @schedules_router.get("/schedule-generation-status")
@@ -975,7 +1146,7 @@ async def get_schedule(background_tasks: BackgroundTasks, date: str = None, db: 
 
 
 @schedules_router.post("/generate-schedule")
-async def generate_schedule(request: dict, db: Session = Depends(get_db)):
+async def generate_schedule(request: dict, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     """
     Generate schedule for a specific date with proper database commits and logging
     """
@@ -1118,6 +1289,17 @@ async def generate_schedule(request: dict, db: Session = Depends(get_db)):
         # Log this generation
         log_schedule_generation(db, date, total_assignments=len(schedule_mappings), trigger_source="manual")
         
+        await log_activity(
+            db=db,
+            activity="AI Schedule Generated",
+            module_name="AI Scheduler",
+            status="success",
+            description=f"Generated {len(new_schedules)} shift assignments and {weekly_off_count} weekly off plans for {date}",
+            user_id=current_user.id,
+            username=current_user.username,
+            role=current_user.role
+        )
+        
         return {
             "status": "success",
             "message": f"Successfully generated {len(new_schedules)} shift assignments and {weekly_off_count} weekly off plans for {date}",
@@ -1136,13 +1318,26 @@ async def generate_schedule(request: dict, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"❌ Error generating schedule: {str(e)}")
         db.rollback()
+        try:
+            await log_activity(
+                db=db,
+                activity="AI Schedule Generated",
+                module_name="AI Scheduler",
+                status="failed",
+                description=f"AI scheduling failed for {date}: {str(e)}",
+                user_id=current_user.id,
+                username=current_user.username,
+                role=current_user.role
+            )
+        except Exception:
+            pass
         raise HTTPException(
             status_code=500,
             detail=f"Error generating schedule: {str(e)}"
         )
 
 @schedules_router.post("/generate-weekly-schedule")
-async def generate_weekly_schedule(request: dict, db: Session = Depends(get_db)):
+async def generate_weekly_schedule(request: dict, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin"]))):
     """
     Generate one-week schedule from imported employee data
     """
@@ -1163,12 +1358,22 @@ async def generate_weekly_schedule(request: dict, db: Session = Depends(get_db))
         print(f"📅 Generating weekly schedule starting from: {start_date}")
         
         # Generate weekly schedule
-        from excel_upload_manager import ExcelUploadManager
+        from app.services.excel_upload_manager import ExcelUploadManager
         manager = ExcelUploadManager(db)
         
         success, message, schedule_summary = manager.generate_weekly_schedule(start_date)
         
         if not success:
+            await log_activity(
+                db=db,
+                activity="Weekly AI Schedule Generated",
+                module_name="AI Scheduler",
+                status="failed",
+                description=f"Weekly AI scheduling failed starting {start_date}: {message}",
+                user_id=current_user.id,
+                username=current_user.username,
+                role=current_user.role
+            )
             raise HTTPException(status_code=400, detail=message)
         
         print(f"✅ Weekly schedule generated: {schedule_summary.get('total_assignments', 0)} assignments")
@@ -1178,6 +1383,17 @@ async def generate_weekly_schedule(request: dict, db: Session = Depends(get_db))
             db, start_date,
             total_assignments=schedule_summary.get('total_assignments', 0),
             trigger_source="weekly-generate"
+        )
+        
+        await log_activity(
+            db=db,
+            activity="Weekly AI Schedule Generated",
+            module_name="AI Scheduler",
+            status="success",
+            description=f"Generated weekly schedule starting {start_date} ({schedule_summary.get('total_assignments', 0)} assignments)",
+            user_id=current_user.id,
+            username=current_user.username,
+            role=current_user.role
         )
         
         return {
@@ -1190,6 +1406,19 @@ async def generate_weekly_schedule(request: dict, db: Session = Depends(get_db))
         raise
     except Exception as e:
         print(f"❌ Error generating weekly schedule: {str(e)}")
+        try:
+            await log_activity(
+                db=db,
+                activity="Weekly AI Schedule Generated",
+                module_name="AI Scheduler",
+                status="failed",
+                description=f"Weekly AI scheduling failed starting {start_date}: {str(e)}",
+                user_id=current_user.id,
+                username=current_user.username,
+                role=current_user.role
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=f"Error generating weekly schedule: {str(e)}")
 
 @schedules_router.get("/get-weekly-schedule")
@@ -1209,7 +1438,7 @@ async def get_weekly_schedule(start_date: str = None, db: Session = Depends(get_
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
         
         # Get weekly schedule
-        from excel_upload_manager import ExcelUploadManager
+        from app.services.excel_upload_manager import ExcelUploadManager
         manager = ExcelUploadManager(db)
         
         weekly_schedule = manager.get_weekly_schedule(start_date)
@@ -1253,7 +1482,7 @@ async def generate_4_week_schedule(request: dict, db: Session = Depends(get_db))
             start_date = datetime.date.today().isoformat()
             
         start_monday = get_current_week_monday(start_date)
-        from excel_upload_manager import ExcelUploadManager
+        from app.services.excel_upload_manager import ExcelUploadManager
         manager = ExcelUploadManager(db)
         
         summaries = []
@@ -1395,7 +1624,7 @@ async def update_shift_assignment(request: dict, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
         
         # Update shift assignment with weekly limitation
-        from weekly_shift_manager import WeeklyShiftManager
+        from app.services.weekly_shift_manager import WeeklyShiftManager
         manager = WeeklyShiftManager(db)
         
         success, message = manager.update_shift_assignment_with_limitation(date, emp_id, new_shift, reason, user_id)
@@ -1430,7 +1659,7 @@ async def get_employee_weekly_status(emp_id: str, date: str = None, db: Session 
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
         
         # Get employee weekly status
-        from weekly_shift_manager import WeeklyShiftManager
+        from app.services.weekly_shift_manager import WeeklyShiftManager
         manager = WeeklyShiftManager(db)
         
         # Find employee
@@ -1469,7 +1698,7 @@ async def get_all_employees_weekly_status(date: str = None, db: Session = Depend
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
         
         # Get all employees weekly status
-        from weekly_shift_manager import WeeklyShiftManager
+        from app.services.weekly_shift_manager import WeeklyShiftManager
         manager = WeeklyShiftManager(db)
         
         status = manager.get_all_employees_weekly_status(date)
@@ -1507,7 +1736,7 @@ async def request_shift_change(request: dict, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
         
         # Request shift change
-        from weekly_shift_manager import WeeklyShiftManager
+        from app.services.weekly_shift_manager import WeeklyShiftManager
         manager = WeeklyShiftManager(db)
         
         success, message = manager.request_shift_change(date, emp_id, new_shift, reason, user_id)
@@ -1539,7 +1768,7 @@ async def approve_shift_change(request: dict, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Missing required fields: change_id, user_id")
         
         # Approve shift change
-        from weekly_shift_manager import WeeklyShiftManager
+        from app.services.weekly_shift_manager import WeeklyShiftManager
         manager = WeeklyShiftManager(db)
         
         success, message = manager.approve_shift_change(change_id, user_id)
@@ -1572,7 +1801,7 @@ async def reject_shift_change(request: dict, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Missing required fields: change_id, user_id")
         
         # Reject shift change
-        from weekly_shift_manager import WeeklyShiftManager
+        from app.services.weekly_shift_manager import WeeklyShiftManager
         manager = WeeklyShiftManager(db)
         
         success, message = manager.reject_shift_change(change_id, user_id, rejection_reason)
@@ -1623,13 +1852,24 @@ async def apply_leave(leave: schemas.LeaveApply, db: Session = Depends(get_db), 
             "shift_time": f"{sched.shift.start_time}-{sched.shift.end_time}"
         })
     
+    await log_activity(
+        db=db,
+        activity="Leave Applied",
+        module_name="Leave Management",
+        status="success",
+        description=f"Leave applied for {emp.name} on {leave.date}. AI automatically handled replacement.",
+        user_id=current_user.id,
+        username=current_user.username,
+        role=current_user.role
+    )
+    
     return {
         "msg": f"Leave applied for {emp.name} on {leave.date}. AI automatically handled replacement.",
         "replacements": replacement_info
     }
 
 @leaves_router.delete("/cancel-leave")
-def cancel_leave(employee_name: str, date: str, db: Session = Depends(get_db), current_user: User = Depends(require_role(["supervisor", "manager", "admin"]))):
+async def cancel_leave(employee_name: str, date: str, db: Session = Depends(get_db), current_user: User = Depends(require_role(["supervisor", "manager", "admin"]))):
     emp = db.query(Employee).filter(Employee.name == employee_name).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -1643,6 +1883,18 @@ def cancel_leave(employee_name: str, date: str, db: Session = Depends(get_db), c
     
     # Trigger AI to handle leave cancellation and weekly off transfer
     ai_scheduler.handle_leave_cancellation(db, emp.id, date)
+    
+    await log_activity(
+        db=db,
+        activity="Leave Cancelled",
+        module_name="Leave Management",
+        status="success",
+        description=f"Leave cancelled for {emp.name} on {date}.",
+        user_id=current_user.id,
+        username=current_user.username,
+        role=current_user.role
+    )
+    
     return {"msg": f"Leave cancelled for {emp.name} on {date}. AI handled weekly off transfer."}
 
 @leaves_router.post("/request-weekly-off-swap")
@@ -2293,3 +2545,4 @@ app.include_router(schedules_router)
 app.include_router(leaves_router)
 app.include_router(reports_router)
 app.include_router(departments_router)
+app.include_router(activity_router)

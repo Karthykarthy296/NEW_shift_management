@@ -314,6 +314,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
       isSubmenu: true,
       roles: ['admin', 'manager', 'supervisor']
     },
+    { icon: <History size={20} />, label: 'Activity Logs', path: `/${roleSlug}/activity-logs`, roles: ['admin', 'manager'] },
     { icon: <Shield size={20} />, label: 'Access Control', path: `/${roleSlug}/users`, roles: ['admin'] },
     { icon: <Settings size={20} />, label: 'Settings', path: `/${roleSlug}/settings`, roles: ['admin', 'manager', 'supervisor'] },
   ].filter(item => item.roles.includes(userRole));

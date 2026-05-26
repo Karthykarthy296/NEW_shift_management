@@ -8,6 +8,7 @@ import Leaves from './pages/Leaves';
 import Settings from './pages/Settings';
 import Upload from './pages/Upload';
 import Users from './pages/Users';
+import ActivityLogs from './pages/ActivityLogs';
 import WeeklyOffSwap from './pages/WeeklyOffSwap';
 import WeeklyOff from './pages/WeeklyOff';
 import { 
@@ -146,6 +147,7 @@ function App() {
             <Route path="/admin/weekly-off" element={<PrivateRoute roleRequired="admin"><WeeklyOff /></PrivateRoute>} />
             <Route path="/admin/upload" element={<PrivateRoute roleRequired="admin"><Upload /></PrivateRoute>} />
             <Route path="/admin/users" element={<PrivateRoute roleRequired="admin"><Users /></PrivateRoute>} />
+            <Route path="/admin/activity-logs" element={<PrivateRoute roleRequired="admin"><ActivityLogs /></PrivateRoute>} />
             <Route path="/admin/settings" element={<PrivateRoute roleRequired="admin"><Settings /></PrivateRoute>} />
             
             {/* Admin Reports */}
@@ -167,6 +169,7 @@ function App() {
             <Route path="/manager/weekly-off-swap" element={<PrivateRoute roleRequired="manager"><WeeklyOffSwap /></PrivateRoute>} />
             <Route path="/manager/weekly-off" element={<PrivateRoute roleRequired="manager"><WeeklyOff /></PrivateRoute>} />
             <Route path="/manager/upload" element={<PrivateRoute roleRequired="manager"><Upload /></PrivateRoute>} />
+            <Route path="/manager/activity-logs" element={<PrivateRoute roleRequired="manager"><ActivityLogs /></PrivateRoute>} />
             <Route path="/manager/settings" element={<PrivateRoute roleRequired="manager"><Settings /></PrivateRoute>} />
 
             {/* Manager Reports */}

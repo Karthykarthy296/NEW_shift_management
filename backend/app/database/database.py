@@ -9,33 +9,43 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DatabaseSetup")
 
-DATABASE_TYPE = "mysql"
+DATABASE_TYPE = os.getenv("DATABASE_TYPE", "mysql")  # Default to MySQL as primary database
 
-MYSQL_USER = os.getenv("MYSQL_USER", "root")
-MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "rootpassword")
-MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
-MYSQL_PORT = os.getenv("MYSQL_PORT", "3306")
-MYSQL_DB = os.getenv("MYSQL_DB", "shift_db_new")
+engine = None
+DATABASE_URL = None
 
-# Use pymysql connector with UTF-8 encoding
-DATABASE_URL = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4"
-logger.info(f"Connecting to MySQL database at {MYSQL_HOST}:{MYSQL_PORT}...")
+if DATABASE_TYPE == "mysql":
+    MYSQL_USER = os.getenv("MYSQL_USER", "root")
+    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "rootpassword")
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+    MYSQL_PORT = os.getenv("MYSQL_PORT", "3306")
+    MYSQL_DB = os.getenv("MYSQL_DB", "shift_db_new")
+    
+    # Use pymysql connector with UTF-8 encoding
+    DATABASE_URL = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4"
+    logger.info(f"Attempting to connect to primary MySQL database at {MYSQL_HOST}:{MYSQL_PORT}...")
+    try:
+        engine = create_engine(
+            DATABASE_URL,
+            pool_size=10,
+            max_overflow=20,
+            pool_recycle=3600,
+            pool_pre_ping=True
+        )
+        # Test connection to verify MySQL is running and accessible
+        with engine.connect() as conn:
+            pass
+        logger.info("✓ Successfully connected to MySQL database!")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not connect to MySQL server: {e}")
+        logger.warning("⚠️ Falling back to SQLite database for safety and continuous operation.")
+        engine = None
 
-try:
-    engine = create_engine(
-        DATABASE_URL,
-        pool_size=10,
-        max_overflow=20,
-        pool_recycle=3600,
-        pool_pre_ping=True
-    )
-    # Test connection to verify MySQL is running and accessible
-    with engine.connect() as conn:
-        pass
-    logger.info("✓ Successfully connected to MySQL database!")
-except Exception as e:
-    logger.critical(f"❌ Could not connect to MySQL server: {e}")
-    raise e
+if engine is None:
+    DATABASE_TYPE = "sqlite"
+    DATABASE_URL = "sqlite:///./shift_db_new.db"
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    logger.info("✓ Connected to SQLite database.")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -181,3 +191,20 @@ class WeeklyOffHistory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     employee = relationship("Employee")
+
+
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    username = Column(String(50), nullable=True, index=True)
+    role = Column(String(20), nullable=True, index=True)
+    activity = Column(String(100), nullable=False, index=True)
+    module_name = Column(String(50), nullable=False, index=True)
+    description = Column(String(255), nullable=True)
+    status = Column(String(20), nullable=False, index=True)
+    ip_address = Column(String(50), nullable=True)
+    device_info = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User", foreign_keys=[user_id])
