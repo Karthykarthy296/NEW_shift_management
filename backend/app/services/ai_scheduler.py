@@ -18,6 +18,59 @@ def clear_schedule_cache():
 
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
+import datetime
+from typing import Union
+
+EPOCH_DATE = datetime.date(2026, 1, 5) # Monday
+
+def get_rotated_weekly_off(base_off: str, target_date: Union[str, datetime.date, datetime.datetime]) -> str:
+    """
+    Get rotated weekly off day for a given base weekly off day and target date.
+    Rotates by 1 day every week to satisfy enterprise-grade scheduling fairness.
+    """
+    if not base_off or str(base_off).strip().lower() == 'nan' or base_off == 'Not Set':
+        base_off = "Sunday"
+        
+    if base_off not in DAYS_OF_WEEK:
+        base_off = base_off.strip().capitalize()
+        if base_off not in DAYS_OF_WEEK:
+            base_off = "Sunday"
+            
+    if isinstance(target_date, str):
+        target_date_obj = datetime.date.fromisoformat(target_date)
+    elif isinstance(target_date, datetime.datetime):
+        target_date_obj = target_date.date()
+    else:
+        target_date_obj = target_date
+        
+    days_diff = (target_date_obj - EPOCH_DATE).days
+    week_idx = days_diff // 7
+    
+    base_off_idx = DAYS_OF_WEEK.index(base_off)
+    rotated_idx = (base_off_idx + week_idx) % 7
+    return DAYS_OF_WEEK[rotated_idx]
+
+def get_working_shifts(db: Session):
+    """
+    Retrieve active working shifts (excluding WEEK OFF and Afternoon) ordered deterministically:
+    Morning -> Evening -> Night.
+    """
+    allowed_names = ["morning", "evening", "night"]
+    all_shifts = db.query(Shift).filter(func.lower(Shift.name).in_(allowed_names)).all()
+    
+    # Sort deterministically: Morning -> Evening -> Night
+    def get_sort_key(s):
+        name = s.name.lower().strip()
+        if "morning" in name:
+            return 0
+        if "evening" in name:
+            return 1
+        if "night" in name:
+            return 2
+        return 99
+        
+    return sorted(all_shifts, key=get_sort_key)
+
 def auto_assign_weekly_offs(db: Session, force_reassign: bool = False) -> dict:
     """
     Enterprise-Grade Fair Weekly Off Distribution Algorithm.
@@ -174,7 +227,7 @@ def rotate_weekly_offs_for_week(db: Session, week_offset: int = 1) -> dict:
     for emp in employees:
         db.refresh(emp)
 
-    print(f"[AI WeeklyOff] 🔄 Rotated {rotated} employees by {week_offset} day(s).")
+    print(f"[AI WeeklyOff] [SPIN] Rotated {rotated} employees by {week_offset} day(s).")
     return {"status": "success", "rotated": rotated, "week_offset": week_offset}
 
 
@@ -480,8 +533,6 @@ def generate_ai_schedule(db: Session, target_date: str = None, force_refresh: bo
         db.commit()
         shifts = db.query(Shift).filter(Shift.name != "WEEK OFF").all()
 
-    days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-
     available = []
     resting = []
     
@@ -489,13 +540,10 @@ def generate_ai_schedule(db: Session, target_date: str = None, force_refresh: bo
         if e.id in leave_ids or e.leave_status == 'On Leave':
             continue
             
-        # ─── Read weekly off directly from the Database ───
-        # The database is already perfectly balanced by the Fair Assignment Engine
-        base_off = e.weekly_off
-        if not base_off or str(base_off).strip().lower() == 'nan' or base_off not in days_list:
-            base_off = "Sunday"
+        # Use our clean rotated weekly off day calculation
+        rotated_off_day = get_rotated_weekly_off(e.weekly_off, target_date_obj)
         
-        if day_name.lower() == base_off.lower():
+        if day_name.lower() == rotated_off_day.lower():
             resting.append(e)
         else:
             available.append(e)
@@ -504,48 +552,72 @@ def generate_ai_schedule(db: Session, target_date: str = None, force_refresh: bo
         db.commit()
         return
 
-    emp_ids      = [e.id for e in available]
-    hist_hours   = _get_historical_hours(db, emp_ids, days=7)
+    working_shifts = get_working_shifts(db)
+    num_working_shifts = len(working_shifts)
     
-    # ── High-Performance Balanced Scheduling Engine ──
-    # Distribute ALL available employees across the active shifts equally
-    num_shifts = len(shifts)
-    shift_assignments = {s.id: [] for s in shifts}
-    assigned_emps = set()
+    # 1. Fetch previous day shift names to rotate fairly
+    prev_date = (target_date_obj - datetime.timedelta(days=1)).isoformat()
+    prev_schedules = (
+        db.query(Schedule.employee_id, Shift.name)
+        .join(Shift, Schedule.shift_id == Shift.id)
+        .filter(Schedule.date == prev_date)
+        .all()
+    )
+    prev_shift_names = {s.employee_id: s.name for s in prev_schedules}
     
-    # Sort available employees deterministically to ensure stable results
-    # We sort by preferred shift first to prioritize preference
-    sorted_available = sorted(available, key=lambda e: (e.preferred_shift or "", e.id))
+    # 2. Map shift name to index
+    shift_name_to_idx = {s.name.lower(): idx for idx, s in enumerate(working_shifts)}
     
-    target_limit = (len(sorted_available) // num_shifts) + 1
-    shift_by_name = {s.name: s for s in shifts}
-    
-    for emp in sorted_available:
-        pref_shift = shift_by_name.get(emp.preferred_shift)
+    # 3. Target capacities for perfect balance
+    num_emps = len(available)
+    target_caps = [num_emps // num_working_shifts] * num_working_shifts
+    for i in range(num_emps % num_working_shifts):
+        target_caps[i] += 1
         
-        # Assign to preferred shift if it has not exceeded target size
-        if pref_shift and len(shift_assignments[pref_shift.id]) < target_limit:
-            chosen_shift = pref_shift
-        else:
-            # Otherwise, balance workload by assigning to the shift with the least number of employees
-            chosen_shift = min(shifts, key=lambda s: len(shift_assignments[s.id]))
-            
-        shift_assignments[chosen_shift.id].append(emp.id)
-        assigned_emps.add(emp.id)
-
-    # 4. Save new schedules in bulk using fast database mappings
+    shift_counts = [0] * num_working_shifts
+    
     schedule_mappings = []
     
-    # Save active shift assignments
-    for shift_id, emp_ids_list in shift_assignments.items():
-        for emp_id in emp_ids_list:
-            schedule_mappings.append({
-                "date": target_date,
-                "shift_id": shift_id,
-                "employee_id": emp_id,
-                "is_override": False,
-                "replaced_employee_id": None
-            })
+    # Sort available deterministically by ID to ensure stable behavior
+    sorted_available = sorted(available, key=lambda e: e.id)
+    
+    for emp in sorted_available:
+        prev_shift = prev_shift_names.get(emp.id)
+        
+        preferred_idx = 0
+        if prev_shift and prev_shift.lower() in shift_name_to_idx:
+            prev_idx = shift_name_to_idx[prev_shift.lower()]
+            preferred_idx = (prev_idx + 1) % num_working_shifts
+        else:
+            preferred_idx = (target_date_obj.toordinal() + (emp.id or 0)) % num_working_shifts
+            
+        chosen_idx = -1
+        if shift_counts[preferred_idx] < target_caps[preferred_idx]:
+            chosen_idx = preferred_idx
+        else:
+            # Assign the least-used shift that has capacity
+            candidate_indices = sorted(
+                range(num_working_shifts),
+                key=lambda idx: (shift_counts[idx], (idx - preferred_idx) % num_working_shifts)
+            )
+            for idx in candidate_indices:
+                if shift_counts[idx] < target_caps[idx]:
+                    chosen_idx = idx
+                    break
+                    
+        if chosen_idx == -1:
+            chosen_idx = preferred_idx
+            
+        chosen_shift = working_shifts[chosen_idx]
+        shift_counts[chosen_idx] += 1
+        
+        schedule_mappings.append({
+            "date": target_date,
+            "shift_id": chosen_shift.id,
+            "employee_id": emp.id,
+            "is_override": False,
+            "replaced_employee_id": None
+        })
             
     # Save resting weekly off assignments as "WEEK OFF" shift
     for emp in resting:
@@ -561,17 +633,26 @@ def generate_ai_schedule(db: Session, target_date: str = None, force_refresh: bo
         db.bulk_insert_mappings(Schedule, schedule_mappings)
         
     db.commit()
+    
+    # Reconstruct shift_assignments for logging compatibility
+    shift_assignments = {s.id: [] for s in shifts}
+    for m in schedule_mappings:
+        s_id = m["shift_id"]
+        if s_id in shift_assignments:
+            shift_assignments[s_id].append(m["employee_id"])
+            
+    emp_ids = [e.id for e in available]
+    hist_hours = _get_historical_hours(db, emp_ids, days=7)
     _log_schedule(shift_assignments, shifts, available, hist_hours)
 
 
 def _log_schedule(assignments, shifts, employees, hist_hours):
-    id_to_name  = {e.id: f"{e.name} ({e.emp_id})" for e in employees}
     id_to_shift = {s.id: s.name for s in shifts}
     total = sum(len(v) for v in assignments.values())
     print(f"\n[AI Scheduler] Schedule generated — {total} assignments:")
     for sid, eids in assignments.items():
-        names = [id_to_name.get(eid, str(eid)) for eid in eids]
-        print(f"  {id_to_shift.get(sid, sid)}: {', '.join(names) or 'EMPTY'}")
+        s_name = id_to_shift.get(sid, f"Shift #{sid}")
+        print(f"  {s_name}: {len(eids)} employees")
     print(f"  Weekly hours context used: {len(hist_hours)} employees")
 
 

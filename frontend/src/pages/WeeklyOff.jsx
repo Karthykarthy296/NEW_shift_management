@@ -8,7 +8,7 @@ import {
   BarChart3, Zap, Shield
 } from 'lucide-react';
 
-const API_URL = 'http://127.0.0.1:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -37,15 +37,18 @@ export default function WeeklyOff() {
   const [editingId, setEditingId]       = useState(null);
   const [editDay, setEditDay]           = useState('');
 
-  const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
+  // Stable helper — reads token at call time, never causes re-renders
+  const getHeaders = () => ({
+    Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+  });
 
   const fetchDistribution = useCallback(async () => {
     try {
-      const res = await axios.get(`${API_URL}/weekly-off-distribution`);
+      const res = await axios.get(`${API_URL}/weekly-off-distribution`, { headers: getHeaders() });
       setDistribution(res.data);
     } catch (e) {
       console.error('Distribution fetch error:', e);
+      if (e.response?.status === 401) navigate('/login');
     }
   }, []);
 
@@ -54,18 +57,20 @@ export default function WeeklyOff() {
     try {
       const params = { page: p, page_size: 50 };
       if (day) params.day = day;
-      const res = await axios.get(`${API_URL}/weekly-off-roster`, { params });
+      const res = await axios.get(`${API_URL}/weekly-off-roster`, { headers: getHeaders(), params });
       setRoster(res.data.employees || []);
       setTotalEmployees(res.data.total || 0);
       setTotalPages(res.data.total_pages || 1);
     } catch (e) {
       console.error('Roster fetch error:', e);
+      if (e.response?.status === 401) navigate('/login');
     } finally {
       setLoading(false);
     }
   }, [page, filterDay]);
 
   useEffect(() => {
+    const token = localStorage.getItem('token');
     if (!token) { navigate('/login'); return; }
     fetchDistribution();
     fetchRoster(1, '');
@@ -82,7 +87,7 @@ export default function WeeklyOff() {
     setActionLoading('assign');
     setMsg(null);
     try {
-      const res = await axios.post(`${API_URL}/assign-weekly-offs`, { force_reassign: force });
+      const res = await axios.post(`${API_URL}/assign-weekly-offs`, { force_reassign: force }, { headers: getHeaders() });
       setMsg({
         type: 'success',
         text: `✅ Fair assignment complete! ${res.data.assignments_made} employees assigned across 7 days.`,
@@ -92,6 +97,7 @@ export default function WeeklyOff() {
       await fetchRoster(1, filterDay);
     } catch (e) {
       setMsg({ type: 'error', text: `❌ ${e.response?.data?.detail || 'Assignment failed'}` });
+      if (e.response?.status === 401) navigate('/login');
     } finally {
       setActionLoading('');
     }
@@ -101,7 +107,7 @@ export default function WeeklyOff() {
     setActionLoading('rotate');
     setMsg(null);
     try {
-      const res = await axios.post(`${API_URL}/rotate-weekly-offs`, { week_offset: 1 });
+      const res = await axios.post(`${API_URL}/rotate-weekly-offs`, { week_offset: 1 }, { headers: getHeaders() });
       setMsg({
         type: 'success',
         text: `🔄 Rotated ${res.data.rotated} employees' weekly off by 1 day for fairness.`,
@@ -110,6 +116,7 @@ export default function WeeklyOff() {
       await fetchRoster(1, filterDay);
     } catch (e) {
       setMsg({ type: 'error', text: `❌ ${e.response?.data?.detail || 'Rotation failed'}` });
+      if (e.response?.status === 401) navigate('/login');
     } finally {
       setActionLoading('');
     }
@@ -117,13 +124,14 @@ export default function WeeklyOff() {
 
   const handleUpdateDay = async (empId, newDay) => {
     try {
-      await axios.patch(`${API_URL}/employees/${empId}/weekly-off`, { weekly_off: newDay });
+      await axios.patch(`${API_URL}/employees/${empId}/weekly-off`, { weekly_off: newDay }, { headers: getHeaders() });
       setEditingId(null);
       setMsg({ type: 'success', text: `✅ Weekly off updated to ${newDay}` });
       await fetchDistribution();
       await fetchRoster(page, filterDay);
     } catch (e) {
       setMsg({ type: 'error', text: `❌ ${e.response?.data?.detail || 'Update failed'}` });
+      if (e.response?.status === 401) navigate('/login');
     }
   };
 

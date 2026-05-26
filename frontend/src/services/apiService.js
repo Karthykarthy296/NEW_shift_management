@@ -34,7 +34,7 @@ api.interceptors.request.use(
     console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`);
 
     // Add auth token if available
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

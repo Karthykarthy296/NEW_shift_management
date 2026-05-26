@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.database.database import SessionLocal, Employee, Shift, Schedule, Department, Leave
-from app.services.ai_scheduler import auto_assign_weekly_offs
+from app.services.ai_scheduler import auto_assign_weekly_offs, get_rotated_weekly_off, get_working_shifts
 import logging
 
 logger = logging.getLogger(__name__)
@@ -395,12 +395,18 @@ class ExcelUploadManager:
             
             total_assignments = 0
             
-            # Define smart shift patterns for balancing shifts equally
-            # These patterns rotate shifts across working days to ensure all roles are distributed equally
-            # We offset the patterns using the employee ID so that all employees don't work the same shift on the same day
-            shift_names = [s.name for s in shifts]
-            if len(shift_names) == 0:
-                shift_names = ["Morning", "Afternoon", "Evening", "Night"]
+            # Predefine and sort working shifts once to avoid N+1 query overhead in nested loops
+            working_shifts = get_working_shifts(self.db)
+            
+            # Initialize previous day's shift from DB
+            prev_date_str = (start_dt - timedelta(days=1)).isoformat()
+            prev_schedules = (
+                self.db.query(Schedule.employee_id, Shift.name)
+                .join(Shift, Schedule.shift_id == Shift.id)
+                .filter(Schedule.date == prev_date_str)
+                .all()
+            )
+            prev_shift_names = {s.employee_id: s.name for s in prev_schedules}
             
             # Loop for 7 days
             for day_offset in range(7):
@@ -410,94 +416,122 @@ class ExcelUploadManager:
                 
                 leaves_today = leaves_by_date.get(date_str, set())
                 
+                # Identify available and resting employees for today
+                available_today = []
+                resting_today = []
                 for emp in employees:
-                    # 1. Skip if employee is on leave today
                     if emp.id in leaves_today or emp.leave_status == 'On Leave':
                         continue
                     
-                    # 2. Check and calculate fair weekly off rotation
-                    # If employee has weekly_off not set, we assign one.
-                    # To rotate fairly every week, we shift the weekly off day by week number!
-                    base_off = emp.weekly_off
-                    if not base_off or str(base_off).strip().lower() == 'nan' or base_off == 'Not Set':
-                        base_off = "Sunday"
-                    
-                    base_off_idx = days.index(base_off) if base_off in days else 6
-                    rotated_off_day = days[(base_off_idx + week_num) % 7]
-                    
-                    # If today is the rotated weekly off day, assign "WEEK OFF" shift and skip rest
+                    rotated_off_day = get_rotated_weekly_off(emp.weekly_off, current_date)
                     if day_name == rotated_off_day:
-                        ex_sched = existing_schedules.get((emp.id, date_str))
-                        if ex_sched:
-                            if ex_sched.is_override:
-                                total_assignments += 1
-                                schedule_summary['daily_schedules'][day_name]['assignments'] += 1
-                                continue
-                            if ex_sched.shift_id != week_off_shift.id:
-                                schedules_to_update.append({
-                                    'id': ex_sched.id,
-                                    'shift_id': week_off_shift.id
-                                })
-                            total_assignments += 1
-                            schedule_summary['daily_schedules'][day_name]['assignments'] += 1
-                        else:
-                            schedules_to_insert.append({
-                                "date": date_str,
-                                "shift_id": week_off_shift.id,
-                                "employee_id": emp.id,
-                                "is_override": False,
-                                "replaced_employee_id": None
-                            })
-                            total_assignments += 1
-                            schedule_summary['daily_schedules'][day_name]['assignments'] += 1
-                        continue
-                    
-                    # 3. Equal shift balancing assignment logic
-                    # We build a list of working shifts for the week and rotate them using employee.id to balance coverage perfectly
-                    # Respect preferred shift for 50% of working days, and rotate other shifts for the rest of working days
-                    pref = emp.preferred_shift if emp.preferred_shift in shift_by_name else shift_names[0]
-                    other_shifts = [s for s in shift_names if s != pref]
-                    
-                    # 6-day working pattern (3 days preference, remaining days distributed)
-                    pattern = [pref, pref, pref] + other_shifts[:3]
-                    # Pad pattern to 7 entries just in case
-                    while len(pattern) < 7:
-                        pattern.append(pref)
-                    
-                    # Deterministic, perfectly balanced shift index using employee.id & day_offset
-                    assigned_shift_name = pattern[(day_offset + (emp.id or 0)) % len(pattern)]
-                    assigned_shift = shift_by_name.get(assigned_shift_name, default_shift)
-                    
-                    # 4. Incremental System: Check if schedule already exists
+                        resting_today.append(emp)
+                    else:
+                        available_today.append(emp)
+                        
+                # 1. Process resting weekly off employees
+                for emp in resting_today:
                     ex_sched = existing_schedules.get((emp.id, date_str))
-                    
                     if ex_sched:
-                        # If manually overridden or modified by supervisor/manager, keep it! Do not touch it!
                         if ex_sched.is_override:
                             total_assignments += 1
                             schedule_summary['daily_schedules'][day_name]['assignments'] += 1
                             continue
-                        
-                        # Otherwise, update existing generated schedule incrementally if shift changed
-                        if ex_sched.shift_id != assigned_shift.id:
+                        if ex_sched.shift_id != week_off_shift.id:
                             schedules_to_update.append({
                                 'id': ex_sched.id,
-                                'shift_id': assigned_shift.id
+                                'shift_id': week_off_shift.id
                             })
-                        
                         total_assignments += 1
                         schedule_summary['daily_schedules'][day_name]['assignments'] += 1
                     else:
-                        # If no schedule exists, create a new one
                         schedules_to_insert.append({
                             "date": date_str,
-                            "shift_id": assigned_shift.id,
+                            "shift_id": week_off_shift.id,
                             "employee_id": emp.id,
                             "is_override": False,
                             "replaced_employee_id": None
                         })
                         total_assignments += 1
                         schedule_summary['daily_schedules'][day_name]['assignments'] += 1
+                        
+                # 2. Process active employees using rotational balancing logic
+                num_working_shifts = len(working_shifts)
+                if num_working_shifts > 0 and available_today:
+                    shift_name_to_idx = {s.name.lower(): idx for idx, s in enumerate(working_shifts)}
+                    
+                    num_emps = len(available_today)
+                    target_caps = [num_emps // num_working_shifts] * num_working_shifts
+                    for i in range(num_emps % num_working_shifts):
+                        target_caps[i] += 1
+                        
+                    shift_counts = [0] * num_working_shifts
+                    
+                    # Sort available deterministically by ID
+                    sorted_available = sorted(available_today, key=lambda e: e.id)
+                    
+                    for emp in sorted_available:
+                        # If employee already has a schedule for today and it's overridden, respect it
+                        ex_sched = existing_schedules.get((emp.id, date_str))
+                        if ex_sched and ex_sched.is_override:
+                            total_assignments += 1
+                            schedule_summary['daily_schedules'][day_name]['assignments'] += 1
+                            # Update prev_shift_names with overridden shift
+                            overridden_shift = self.db.query(Shift).filter(Shift.id == ex_sched.shift_id).first()
+                            if overridden_shift:
+                                prev_shift_names[emp.id] = overridden_shift.name
+                            continue
+                            
+                        # Otherwise, calculate rotated shift
+                        prev_shift = prev_shift_names.get(emp.id)
+                        preferred_idx = 0
+                        if prev_shift and prev_shift.lower() in shift_name_to_idx:
+                            prev_idx = shift_name_to_idx[prev_shift.lower()]
+                            preferred_idx = (prev_idx + 1) % num_working_shifts
+                        else:
+                            preferred_idx = (current_date.toordinal() + (emp.id or 0)) % num_working_shifts
+                            
+                        chosen_idx = -1
+                        if shift_counts[preferred_idx] < target_caps[preferred_idx]:
+                            chosen_idx = preferred_idx
+                        else:
+                            # Assign the least-used shift that has capacity
+                            candidate_indices = sorted(
+                                range(num_working_shifts),
+                                key=lambda idx: (shift_counts[idx], (idx - preferred_idx) % num_working_shifts)
+                            )
+                            for idx in candidate_indices:
+                                if shift_counts[idx] < target_caps[idx]:
+                                    chosen_idx = idx
+                                    break
+                                    
+                        if chosen_idx == -1:
+                            chosen_idx = preferred_idx
+                            
+                        assigned_shift = working_shifts[chosen_idx]
+                        shift_counts[chosen_idx] += 1
+                        
+                        # Save assigned shift name to memory for next day's rotation
+                        prev_shift_names[emp.id] = assigned_shift.name
+                        
+                        if ex_sched:
+                            if ex_sched.shift_id != assigned_shift.id:
+                                schedules_to_update.append({
+                                    'id': ex_sched.id,
+                                    'shift_id': assigned_shift.id
+                                })
+                            total_assignments += 1
+                            schedule_summary['daily_schedules'][day_name]['assignments'] += 1
+                        else:
+                            schedules_to_insert.append({
+                                "date": date_str,
+                                "shift_id": assigned_shift.id,
+                                "employee_id": emp.id,
+                                "is_override": False,
+                                "replaced_employee_id": None
+                            })
+                            total_assignments += 1
+                            schedule_summary['daily_schedules'][day_name]['assignments'] += 1
             
             # 5. Database Batch Processing Optimization
             # Bulk Insert new schedules

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
-import { Calendar, ClipboardList, CalendarDays, CalendarRange, RefreshCw, UserCheck, Plus, X } from 'lucide-react';
+import { Calendar, ClipboardList, CalendarDays, CalendarRange, RefreshCw, UserCheck, Plus, X, Building2, ChevronDown } from 'lucide-react';
 
-const API_URL = 'http://127.0.0.1:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 const weekDays = [
   { abbrev: 'Mon', full: 'Monday' },
@@ -34,6 +34,12 @@ export default function Leaves() {
   const [employeesOptions, setEmployeesOptions] = useState([]);
   const [modalEmpName, setModalEmpName] = useState('');
   const [modalDate, setModalDate] = useState('');
+
+  // Department states
+  const [departments, setDepartments] = useState([]);
+  const [selectedDept, setSelectedDept] = useState('');
+  const [deptLoading, setDeptLoading] = useState(false);
+  const [empLoading, setEmpLoading] = useState(false);
 
   // Search & Autocomplete States
   const [empSearchQuery, setEmpSearchQuery] = useState('');
@@ -96,27 +102,50 @@ export default function Leaves() {
     }
   };
 
-  const fetchEmployeesOptions = async () => {
+  const fetchDepartments = useCallback(async () => {
     if (!isAuthorized) return;
-
     const token = localStorage.getItem('token');
     if (!token) return;
+    setDeptLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/employees`, {
+      const res = await axios.get(`${API_URL}/departments`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setEmployeesOptions(res.data);
+      setDepartments(res.data || []);
     } catch (e) {
-      console.error("Error fetching employees list:", e);
+      console.error('Error fetching departments:', e);
+    } finally {
+      setDeptLoading(false);
     }
-  };
+  }, [isAuthorized]);
+
+  const fetchEmployeesOptions = useCallback(async (dept = '') => {
+    if (!isAuthorized) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    setEmpLoading(true);
+    try {
+      const params = dept ? `?department=${encodeURIComponent(dept)}` : '';
+      const res = await axios.get(`${API_URL}/employees${params}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setEmployeesOptions(res.data || []);
+    } catch (e) {
+      console.error('Error fetching employees list:', e);
+    } finally {
+      setEmpLoading(false);
+    }
+  }, [isAuthorized]);
 
   useEffect(() => {
     fetchScheduleAndLeaves();
   }, [targetDate, isAuthorized]);
 
   useEffect(() => {
-    fetchEmployeesOptions();
+    if (isAuthorized) {
+      fetchDepartments();
+      fetchEmployeesOptions();
+    }
   }, [isAuthorized]);
 
   // Detailed information for employees currently on leave
@@ -143,15 +172,22 @@ export default function Leaves() {
     });
   }, [leaves, employeesOptions]);
 
-  // Autocomplete filter logic
+  // When department selection changes, reload employee list and clear current selection
+  const handleDeptChange = (deptName) => {
+    setSelectedDept(deptName);
+    setModalEmpName('');
+    setEmpSearchQuery('');
+    setIsEmpDropdownOpen(false);
+    fetchEmployeesOptions(deptName);
+  };
+
+  // Autocomplete filter logic (within the already-dept-filtered list)
   const filteredEmployees = useMemo(() => {
     if (!empSearchQuery) return employeesOptions;
-    
     const matched = employeesOptions.find(e => e.name === modalEmpName);
     if (matched && `${matched.name} (${matched.emp_id})` === empSearchQuery) {
       return employeesOptions;
     }
-
     const q = empSearchQuery.toLowerCase();
     return employeesOptions.filter(emp =>
       emp.name.toLowerCase().includes(q) || emp.emp_id.toLowerCase().includes(q)
@@ -611,6 +647,8 @@ export default function Leaves() {
                 setModalEmpName('');
                 setEmpSearchQuery('');
                 setIsEmpDropdownOpen(false);
+                setSelectedDept('');
+                fetchEmployeesOptions(); // reset to all employees
               }}
               style={{
                 position: 'absolute',
@@ -630,94 +668,169 @@ export default function Leaves() {
             </h3>
 
             <form onSubmit={handleModalSubmit}>
-              <label style={lightStyles.formLabel}>Select Employee</label>
-              
-              {/* Type and Search Autocomplete Input */}
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="text"
-                  placeholder="Type name or ID to search..."
-                  value={empSearchQuery}
-                  onChange={(e) => {
-                    setEmpSearchQuery(e.target.value);
-                    setModalEmpName(''); // Reset selected employee while typing
-                    setIsEmpDropdownOpen(true);
-                  }}
-                  onFocus={() => setIsEmpDropdownOpen(true)}
-                  onBlur={() => {
-                    // Small delay to allow dropdown click selection to resolve first
-                    setTimeout(() => setIsEmpDropdownOpen(false), 250);
-                  }}
-                  style={lightStyles.formInput}
-                  required
-                />
-                
-                {empSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmpSearchQuery('');
-                      setModalEmpName('');
-                    }}
+
+              {/* ── Step 1: Department ───────────────────────── */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ ...lightStyles.formLabel, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Building2 size={13} color="#7c3aed" />
+                  Department
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value={selectedDept}
+                    onChange={e => handleDeptChange(e.target.value)}
                     style={{
-                      position: 'absolute',
-                      right: '1rem',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: '#94a3b8',
+                      ...lightStyles.formInput,
+                      appearance: 'none',
+                      paddingRight: '2.5rem',
                       cursor: 'pointer',
-                      fontSize: '0.85rem',
-                      fontWeight: 'bold',
-                      zIndex: 10
+                      color: selectedDept ? '#0f172a' : '#94a3b8',
                     }}
                   >
-                    ✕
-                  </button>
-                )}
-
-                {/* Dropdown Options List */}
-                {isEmpDropdownOpen && (
-                  <div style={lightStyles.dropdownList}>
-                    {filteredEmployees.length === 0 ? (
-                      <div style={{ padding: '0.75rem 1rem', color: '#64748b', fontSize: '0.9rem' }}>
-                        No employees found
-                      </div>
+                    <option value="">All Departments</option>
+                    {deptLoading ? (
+                      <option disabled>Loading…</option>
                     ) : (
-                      filteredEmployees.map(emp => (
-                        <div
-                          key={emp.emp_id}
-                          onClick={() => handleSelectEmployee(emp)}
-                          style={lightStyles.dropdownItem}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = '#f5f3ff';
-                            e.currentTarget.style.color = '#7c3aed';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                            e.currentTarget.style.color = '#0f172a';
-                          }}
-                        >
-                          <span style={{ fontWeight: 800 }}>{emp.name}</span>
-                          <span style={{ fontSize: '0.75rem', color: '#7c3aed', marginLeft: '0.5rem', fontWeight: 600 }}>({emp.emp_id})</span>
-                        </div>
+                      departments.map(d => (
+                        <option key={d.id || d.name} value={d.name}>{d.name}</option>
                       ))
                     )}
+                  </select>
+                  <ChevronDown
+                    size={15}
+                    color="#94a3b8"
+                    style={{
+                      position: 'absolute', right: '0.9rem', top: '50%',
+                      transform: 'translateY(-50%)', pointerEvents: 'none'
+                    }}
+                  />
+                </div>
+                {selectedDept && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      padding: '3px 10px', borderRadius: '999px',
+                      background: '#f5f3ff', color: '#7c3aed',
+                      fontSize: '0.72rem', fontWeight: 700,
+                      border: '1px solid #ddd6fe'
+                    }}>
+                      <Building2 size={10} /> {selectedDept}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeptChange('')}
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >
+                      Clear
+                    </button>
                   </div>
                 )}
               </div>
 
-              <label style={lightStyles.formLabel}>Select Date</label>
-              <input
-                type="date"
-                value={modalDate}
-                onChange={(e) => setModalDate(e.target.value)}
-                style={lightStyles.formInput}
-                required
-              />
+              {/* ── Step 2: Employee Search ──────────────────── */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={lightStyles.formLabel}>
+                  Select Employee
+                  {selectedDept && (
+                    <span style={{ fontSize: '0.72rem', fontWeight: 500, color: '#7c3aed', marginLeft: '6px' }}>
+                      ({employeesOptions.length} in {selectedDept})
+                    </span>
+                  )}
+                </label>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '2rem' }}>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder={empLoading ? 'Loading employees…' : 'Type name or ID to search…'}
+                    value={empSearchQuery}
+                    disabled={empLoading}
+                    onChange={e => {
+                      setEmpSearchQuery(e.target.value);
+                      setModalEmpName('');
+                      setIsEmpDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsEmpDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setIsEmpDropdownOpen(false), 250)}
+                    style={{
+                      ...lightStyles.formInput,
+                      opacity: empLoading ? 0.6 : 1,
+                      cursor: empLoading ? 'not-allowed' : 'text',
+                    }}
+                    required
+                  />
+
+                  {empSearchQuery && !empLoading && (
+                    <button
+                      type="button"
+                      onClick={() => { setEmpSearchQuery(''); setModalEmpName(''); }}
+                      style={{
+                        position: 'absolute', right: '1rem', top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', color: '#94a3b8',
+                        cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', zIndex: 10
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+
+                  {/* Employee Dropdown */}
+                  {isEmpDropdownOpen && !empLoading && (
+                    <div style={lightStyles.dropdownList}>
+                      {filteredEmployees.length === 0 ? (
+                        <div style={{ padding: '0.75rem 1rem', color: '#64748b', fontSize: '0.9rem' }}>
+                          No employees found{selectedDept ? ` in ${selectedDept}` : ''}
+                        </div>
+                      ) : (
+                        filteredEmployees.slice(0, 60).map(emp => (
+                          <div
+                            key={emp.emp_id}
+                            onClick={() => handleSelectEmployee(emp)}
+                            style={lightStyles.dropdownItem}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.backgroundColor = '#f5f3ff';
+                              e.currentTarget.style.color = '#7c3aed';
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                              e.currentTarget.style.color = '#0f172a';
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                              <div>
+                                <span style={{ fontWeight: 800 }}>{emp.name}</span>
+                                <span style={{ fontSize: '0.75rem', color: '#7c3aed', marginLeft: '0.5rem', fontWeight: 600 }}>({emp.emp_id})</span>
+                              </div>
+                              {emp.department && (
+                                <span style={{
+                                  fontSize: '0.65rem', color: '#64748b', fontWeight: 600,
+                                  background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px'
+                                }}>
+                                  {emp.department}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Step 3: Date ─────────────────────────────── */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={lightStyles.formLabel}>Select Date</label>
+                <input
+                  type="date"
+                  value={modalDate}
+                  onChange={e => setModalDate(e.target.value)}
+                  style={lightStyles.formInput}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
                 <button
                   type="button"
                   onClick={() => {
@@ -725,6 +838,8 @@ export default function Leaves() {
                     setModalEmpName('');
                     setEmpSearchQuery('');
                     setIsEmpDropdownOpen(false);
+                    setSelectedDept('');
+                    fetchEmployeesOptions();
                   }}
                   style={lightStyles.modalCancelBtn}
                 >
@@ -732,10 +847,14 @@ export default function Leaves() {
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading}
-                  style={lightStyles.modalSubmitBtn}
+                  disabled={actionLoading || !modalEmpName}
+                  style={{
+                    ...lightStyles.modalSubmitBtn,
+                    opacity: (actionLoading || !modalEmpName) ? 0.6 : 1,
+                    cursor: (actionLoading || !modalEmpName) ? 'not-allowed' : 'pointer',
+                  }}
                 >
-                  {actionLoading ? 'Applying...' : 'Apply Leave'}
+                  {actionLoading ? 'Applying…' : 'Apply Leave'}
                 </button>
               </div>
             </form>
