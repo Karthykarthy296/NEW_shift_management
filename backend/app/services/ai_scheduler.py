@@ -670,6 +670,90 @@ def generate_ai_schedule(db: Session, target_date: str = None, force_refresh: bo
             "replaced_employee_id": None
         })
             
+    # ─── Gemini 2.5 Flash Optimization Layer ──────────────────────────────
+    try:
+        from app.services.gemini_service import call_gemini_optimizer
+        
+        # Serialize database context
+        employees_data = [{
+            "id": e.id,
+            "emp_id": e.emp_id,
+            "name": e.name,
+            "role": e.role,
+            "department": e.department.name if e.department else "General",
+            "skills": e.skills,
+            "preferred_shift": e.preferred_shift,
+            "max_hours": e.max_hours,
+            "weekly_off": e.weekly_off,
+            "leave_status": e.leave_status
+        } for e in employees]
+
+        shifts_data = [{
+            "id": s.id,
+            "name": s.name,
+            "start_time": s.start_time,
+            "end_time": s.end_time,
+            "required_employees": s.required_employees
+        } for s in shifts]
+
+        leaves_data = [{
+            "employee_id": l.employee_id,
+            "date": l.date
+        } for l in leaves]
+
+        current_assignments = [{
+            "employee_id": m["employee_id"],
+            "shift_id": m["shift_id"]
+        } for m in schedule_mappings]
+
+        print("[Gemini Optimizer] Requesting optimizations from Gemini 2.5 Flash...")
+        suggestions = call_gemini_optimizer(employees_data, shifts_data, leaves_data, current_assignments)
+        
+        if suggestions:
+            print(f"[Gemini Optimizer] Received {len(suggestions)} optimization suggestions.")
+            # Map employee_id to their index in schedule_mappings for quick updates
+            mapping_by_emp = {m["employee_id"]: idx for idx, m in enumerate(schedule_mappings)}
+            
+            for sug in suggestions:
+                emp_id = sug.get("employee_id")
+                new_shift_id = sug.get("shift_id")
+                reason = sug.get("reason", "No reason provided")
+                
+                if emp_id not in mapping_by_emp:
+                    print(f"  [Gemini Optimizer] Skipping invalid employee ID: {emp_id}")
+                    continue
+                
+                # Check if new_shift_id is valid
+                shift_exists = any(s.id == new_shift_id for s in shifts) or (week_off_shift and week_off_shift.id == new_shift_id)
+                if not shift_exists:
+                    print(f"  [Gemini Optimizer] Skipping invalid shift ID: {new_shift_id}")
+                    continue
+                
+                # Perform business rule check
+                is_valid, err_msg = validate_replacement_constraints(db, emp_id, target_date, new_shift_id)
+                if not is_valid:
+                    print(f"  [Gemini Optimizer] Suggestion for Employee {emp_id} to Shift {new_shift_id} failed constraints: {err_msg}")
+                    continue
+                
+                # Dry run apply and test role coverage
+                orig_idx = mapping_by_emp[emp_id]
+                old_shift_id = schedule_mappings[orig_idx]["shift_id"]
+                schedule_mappings[orig_idx]["shift_id"] = new_shift_id
+                
+                proposed = [{"employee_id": m["employee_id"], "shift_id": m["shift_id"]} for m in schedule_mappings]
+                is_valid_coverage, cov_err = check_department_role_coverage(db, target_date, proposed)
+                
+                if is_valid_coverage:
+                    print(f"  [Gemini Optimizer] Applied optimization: Employee {emp_id} -> Shift {new_shift_id}. Reason: {reason}")
+                else:
+                    # Revert
+                    schedule_mappings[orig_idx]["shift_id"] = old_shift_id
+                    print(f"  [Gemini Optimizer] Rejected optimization for Employee {emp_id} due to department coverage: {cov_err}")
+        else:
+            print("[Gemini Optimizer] No optimizations suggested or API call returned None.")
+    except Exception as gem_err:
+        print(f"[Gemini Optimizer] Optimization layer failed gracefully: {gem_err}")
+
     if schedule_mappings:
         db.bulk_insert_mappings(Schedule, schedule_mappings)
         
