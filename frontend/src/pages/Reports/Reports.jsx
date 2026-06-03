@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
+import api from '../../services/apiService';
 import DashboardLayout from '../../components/DashboardLayout';
 import { 
   FileText, TrendingUp, BarChart3, PieChart, Clock, ShieldCheck, 
@@ -13,7 +13,20 @@ import {
   LineChart, Line, PieChart as RePieChart, Pie, Cell, AreaChart, Area, ComposedChart
 } from 'recharts';
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const SafeResponsiveContainer = ({ children, ...props }) => {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return <div style={{ width: props.width || '100%', height: props.height || '100%' }} />;
+
+  return (
+    <ResponsiveContainer {...props}>
+      {children}
+    </ResponsiveContainer>
+  );
+};
 
 // --- Utilities ---
 
@@ -124,8 +137,8 @@ export const AttendanceReport = () => {
   const fetchData = async () => {
     try {
       const [summary, trends] = await Promise.all([
-        axios.get(`${API_BASE_URL}/dashboard-summary`),
-        axios.get(`${API_BASE_URL}/reports/attendance-trends`)
+        api.get('/dashboard-summary'),
+        api.get('/reports/attendance-trends')
       ]);
       
       const total = summary.data.total_employees || 0;
@@ -173,7 +186,7 @@ export const AttendanceReport = () => {
             <TrendingUp size={20} className="text-indigo-500" /> Attendance Trends (Last 7 Days)
           </h3>
           <div className="h-[350px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
+            <SafeResponsiveContainer width="100%" height="100%">
               <AreaChart data={data.trends}>
                 <defs>
                   <linearGradient id="colorPresent" x1="0" y1="0" x2="0" y2="1">
@@ -191,7 +204,7 @@ export const AttendanceReport = () => {
                 <Area type="monotone" dataKey="present" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorPresent)" />
                 <Area type="monotone" dataKey="absent" stroke="#ef4444" strokeWidth={4} fillOpacity={0} />
               </AreaChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           </div>
         </div>
       </div>
@@ -205,7 +218,7 @@ export const ShiftDistributionReport = () => {
 
   const fetchData = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/dashboard-summary`);
+      const res = await api.get('/dashboard-summary');
       const dist = res.data.shift_assignments || {};
       const chartData = Object.entries(dist).map(([name, count]) => ({ name, count }));
       setData({ shifts: Object.keys(dist), distribution: chartData });
@@ -245,7 +258,7 @@ export const ShiftDistributionReport = () => {
         <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-2xl shadow-black/[0.03]">
           <h3 className="text-2xl font-black text-slate-900 mb-12">Workforce Concentration</h3>
           <div className="h-[400px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
+            <SafeResponsiveContainer width="100%" height="100%">
               <BarChart data={data.distribution}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 13, fontWeight: 800}} />
@@ -257,7 +270,7 @@ export const ShiftDistributionReport = () => {
                   ))}
                 </Bar>
               </BarChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           </div>
         </div>
       </div>
@@ -271,7 +284,7 @@ export const LeaveReport = () => {
 
   const fetchData = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/reports/leave-stats`);
+      const res = await api.get('/reports/leave-stats');
       setData(res.data);
       setLoading(false);
     } catch (err) { console.error(err); setLoading(false); }
@@ -298,7 +311,7 @@ export const LeaveReport = () => {
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-black/[0.02]">
               <h3 className="text-xl font-black text-slate-900 mb-8">Monthly Leave Trends</h3>
               <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <SafeResponsiveContainer width="100%" height="100%">
                   <BarChart data={data.trends}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 700}} />
@@ -309,7 +322,7 @@ export const LeaveReport = () => {
                     <Bar dataKey="personal" fill="#fb923c" stackId="a" />
                     <Bar dataKey="casual" fill="#ec4899" stackId="a" radius={[10, 10, 0, 0]} />
                   </BarChart>
-                </ResponsiveContainer>
+                </SafeResponsiveContainer>
               </div>
             </div>
           </div>
@@ -348,8 +361,10 @@ export const OvertimeReport = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/overtime?status=all`);
-        setData(res.data);
+        const res = await api.get('/overtime');
+        console.log("OT API response:", res.data);
+        console.log("Token:", localStorage.getItem("token"));
+        setData(res.data.data || []);
         setLoading(false);
       } catch (err) { console.error(err); setLoading(false); }
     };
@@ -422,7 +437,7 @@ export const AIOptimizationReport = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/reports/ai-metrics`);
+        const res = await api.get('/reports/ai-metrics');
         setData(res.data);
         setLoading(false);
       } catch (err) { console.error(err); setLoading(false); }
@@ -441,7 +456,7 @@ export const AIOptimizationReport = () => {
               <TrendingUp className="text-emerald-500" /> Workload Balancing
             </h3>
             <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <SafeResponsiveContainer width="100%" height="100%">
                 <BarChart data={data.workload_balance}>
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontWeight: 700}} />
                   <YAxis hide />
@@ -452,7 +467,7 @@ export const AIOptimizationReport = () => {
                     ))}
                   </Bar>
                 </BarChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             </div>
           </div>
           <div className="bg-indigo-600 p-10 rounded-[3rem] text-white shadow-2xl shadow-indigo-900/40 relative overflow-hidden">
@@ -486,7 +501,7 @@ export const DepartmentCoverageReport = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/reports/department-coverage`);
+        const res = await api.get('/reports/department-coverage');
         setData(res.data);
         setLoading(false);
       } catch (err) { console.error(err); setLoading(false); }
@@ -539,7 +554,7 @@ export const ReplacementHistoryReport = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/reports/replacement-history`);
+        const res = await api.get('/reports/replacement-history');
         setData(res.data);
         setLoading(false);
       } catch (err) { console.error(err); setLoading(false); }
@@ -594,7 +609,7 @@ export const WeeklyAnalytics = () => (
       <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-black/[0.02]">
         <h3 className="text-xl font-black text-slate-900 mb-8">Workforce Utilization %</h3>
         <div className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
+          <SafeResponsiveContainer width="100%" height="100%">
             <AreaChart data={[
               { name: 'Mon', val: 85 }, { name: 'Tue', val: 88 }, { name: 'Wed', val: 84 }, { name: 'Thu', val: 92 },
               { name: 'Fri', val: 95 }, { name: 'Sat', val: 78 }, { name: 'Sun', val: 75 },
@@ -603,13 +618,13 @@ export const WeeklyAnalytics = () => (
               <Tooltip />
               <Area type="monotone" dataKey="val" stroke="#4f46e5" strokeWidth={3} fill="#818cf8" fillOpacity={0.1} />
             </AreaChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </div>
       </div>
       <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-black/[0.02]">
         <h3 className="text-xl font-black text-slate-900 mb-8">Incident Response (min)</h3>
         <div className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
+          <SafeResponsiveContainer width="100%" height="100%">
             <LineChart data={[
               { name: 'Mon', val: 12 }, { name: 'Tue', val: 14 }, { name: 'Wed', val: 10 }, { name: 'Thu', val: 8 },
               { name: 'Fri', val: 15 }, { name: 'Sat', val: 20 }, { name: 'Sun', val: 18 },
@@ -618,7 +633,7 @@ export const WeeklyAnalytics = () => (
               <Tooltip />
               <Line type="stepAfter" dataKey="val" stroke="#f59e0b" strokeWidth={4} dot={true} />
             </LineChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </div>
       </div>
     </div>

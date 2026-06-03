@@ -11,6 +11,7 @@ import Users from './pages/Users';
 import ActivityLogs from './pages/ActivityLogs';
 import WeeklyOffSwap from './pages/WeeklyOffSwap';
 import WeeklyOff from './pages/WeeklyOff';
+import Overtime from './pages/Overtime';
 import { 
   AttendanceReport, 
   ShiftDistributionReport, 
@@ -143,6 +144,7 @@ function App() {
             <Route path="/admin/shifts" element={<PrivateRoute roleRequired="admin"><Shifts /></PrivateRoute>} />
             <Route path="/admin/employees" element={<PrivateRoute roleRequired="admin"><Employees /></PrivateRoute>} />
             <Route path="/admin/leaves" element={<PrivateRoute roleRequired="admin"><Leaves /></PrivateRoute>} />
+            <Route path="/admin/overtime" element={<PrivateRoute roleRequired="admin"><Overtime /></PrivateRoute>} />
             <Route path="/admin/weekly-off-swap" element={<PrivateRoute roleRequired="admin"><WeeklyOffSwap /></PrivateRoute>} />
             <Route path="/admin/weekly-off" element={<PrivateRoute roleRequired="admin"><WeeklyOff /></PrivateRoute>} />
             <Route path="/admin/upload" element={<PrivateRoute roleRequired="admin"><Upload /></PrivateRoute>} />
@@ -166,6 +168,7 @@ function App() {
             <Route path="/manager/shifts" element={<PrivateRoute roleRequired="manager"><Shifts /></PrivateRoute>} />
             <Route path="/manager/employees" element={<PrivateRoute roleRequired="manager"><Employees /></PrivateRoute>} />
             <Route path="/manager/leaves" element={<PrivateRoute roleRequired="manager"><Leaves /></PrivateRoute>} />
+            <Route path="/manager/overtime" element={<PrivateRoute roleRequired="manager"><Overtime /></PrivateRoute>} />
             <Route path="/manager/weekly-off-swap" element={<PrivateRoute roleRequired="manager"><WeeklyOffSwap /></PrivateRoute>} />
             <Route path="/manager/weekly-off" element={<PrivateRoute roleRequired="manager"><WeeklyOff /></PrivateRoute>} />
             <Route path="/manager/upload" element={<PrivateRoute roleRequired="manager"><Upload /></PrivateRoute>} />
@@ -187,6 +190,7 @@ function App() {
             <Route path="/supervisor/dashboard" element={<PrivateRoute roleRequired="supervisor"><MainDashboard /></PrivateRoute>} />
             <Route path="/supervisor/shifts" element={<PrivateRoute roleRequired="supervisor"><Shifts /></PrivateRoute>} />
             <Route path="/supervisor/leaves" element={<PrivateRoute roleRequired="supervisor"><Leaves /></PrivateRoute>} />
+            <Route path="/supervisor/overtime" element={<PrivateRoute roleRequired="supervisor"><Overtime /></PrivateRoute>} />
             <Route path="/supervisor/weekly-off-swap" element={<PrivateRoute roleRequired="supervisor"><WeeklyOffSwap /></PrivateRoute>} />
             <Route path="/supervisor/weekly-off" element={<PrivateRoute roleRequired="supervisor"><WeeklyOff /></PrivateRoute>} />
             <Route path="/supervisor/settings" element={<PrivateRoute roleRequired="supervisor"><Settings /></PrivateRoute>} />

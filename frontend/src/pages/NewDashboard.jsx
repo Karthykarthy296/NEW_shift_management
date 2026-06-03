@@ -19,6 +19,21 @@ import {
 } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
+const SafeResponsiveContainer = ({ children, ...props }) => {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return <div style={{ width: props.width || '100%', height: props.height || '100%' }} />;
+
+  return (
+    <ResponsiveContainer {...props}>
+      {children}
+    </ResponsiveContainer>
+  );
+};
+
 const API_URL = 'http://127.0.0.1:8000';
 
 export default function NewDashboard() {
@@ -27,6 +42,12 @@ export default function NewDashboard() {
   const [leaves, setLeaves] = useState([]);
   const [schedulesGenerated, setSchedulesGenerated] = useState(1);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [overtimeStats, setOvertimeStats] = useState({
+    total_hours: 0,
+    employees_today: 0,
+    department_wise: {},
+    monthly_summary: []
+  });
   const navigate = useNavigate();
   const role = localStorage.getItem('role') || 'User';
   const username = localStorage.getItem('username') || 'User';
@@ -64,9 +85,22 @@ export default function NewDashboard() {
           setSchedulesGenerated(1);
         }
 
+        // Fetch overtime stats
+        try {
+          const otRes = await axios.get(`${API_URL}/overtime/stats`, { headers });
+          setOvertimeStats(otRes.data?.data || {
+            total_hours: 0,
+            employees_today: 0,
+            department_wise: {},
+            monthly_summary: []
+          });
+        } catch (err) {
+          console.error('Error fetching overtime stats:', err);
+        }
+
         // One-time check of AI generation status (no polling loop)
         try {
-          const statusRes = await axios.get(`${API_URL}/schedule-generation-status`);
+          const statusRes = await axios.get(`${API_URL}/schedule-generation-status`, { headers });
           setIsGenerating(statusRes.data?.is_generating ?? false);
         } catch {
           setIsGenerating(false);
@@ -80,6 +114,7 @@ export default function NewDashboard() {
     };
 
     fetchData();
+
     // Empty dependency array: runs ONCE on mount only. No polling, no re-fetch loops.
   }, []);
 
@@ -143,10 +178,11 @@ export default function NewDashboard() {
   const metrics = [
     { label: 'Schedules Generated', value: String(schedulesGenerated), subtitle: 'This Month', icon: Calendar, color: 'bg-pink-50 text-pink-600' },
     { label: 'Attendance Rate', value: `${attendancePercentage}%`, subtitle: 'Currently Present', icon: CheckCircle2, color: 'bg-green-50 text-green-600' },
-    { label: 'Overtime Hours', value: '45.30', subtitle: 'This Month', icon: Clock, color: 'bg-blue-50 text-blue-600' },
-    { label: 'Productivity Rate', value: '88.10%', subtitle: 'This Month', icon: TrendingUp, color: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Employee Satisfaction', value: '4.2 / 5', subtitle: 'This Month', icon: Users, color: 'bg-purple-50 text-purple-600' }
+    { label: 'Overtime Hours', value: `${(overtimeStats?.total_hours || 0).toFixed(1)} hrs`, subtitle: 'Approved (All Time)', icon: Clock, color: 'bg-blue-50 text-blue-600' },
+    { label: 'OT Employees Today', value: String(overtimeStats?.employees_today || 0), subtitle: 'Active Today', icon: Users, color: 'bg-purple-50 text-purple-600' },
+    { label: 'Productivity Rate', value: '88.10%', subtitle: 'This Month', icon: TrendingUp, color: 'bg-emerald-50 text-emerald-600' }
   ];
+
 
   return (
     <DashboardLayout title="Dashboard">
@@ -308,7 +344,7 @@ export default function NewDashboard() {
           <div className="bg-white rounded-xl p-6 border border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 mb-6">Shift Distribution (Today)</h3>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
+              <SafeResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={shiftData}
@@ -325,7 +361,7 @@ export default function NewDashboard() {
                   </Pie>
                   <Tooltip />
                 </PieChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             </div>
             <div className="mt-4 space-y-2">
               {shiftData.map((item, idx) => (
@@ -344,7 +380,7 @@ export default function NewDashboard() {
           <div className="bg-white rounded-xl p-6 border border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 mb-6">Department Wise Employee Count</h3>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
+              <SafeResponsiveContainer width="100%" height="100%">
                 <BarChart data={departmentData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
@@ -352,7 +388,7 @@ export default function NewDashboard() {
                   <Tooltip />
                   <Bar dataKey="count" fill="#3B82F6" radius={[8, 8, 0, 0]} />
                 </BarChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             </div>
           </div>
 
@@ -361,7 +397,7 @@ export default function NewDashboard() {
             <h3 className="text-lg font-bold text-gray-900 mb-6">Today's Attendance Overview</h3>
             <div className="h-64 flex items-center justify-center">
               <div className="relative">
-                <ResponsiveContainer width={200} height={200}>
+                <SafeResponsiveContainer width={200} height={200}>
                   <PieChart>
                     <Pie
                       data={attendanceData}
@@ -377,7 +413,7 @@ export default function NewDashboard() {
                       ))}
                     </Pie>
                   </PieChart>
-                </ResponsiveContainer>
+                </SafeResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                   <p className="text-3xl font-bold text-gray-900">{attendancePercentage}%</p>
                   <p className="text-sm text-gray-600">Present</p>

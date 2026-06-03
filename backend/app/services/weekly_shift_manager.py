@@ -130,6 +130,13 @@ class WeeklyShiftManager:
                 Schedule.employee_id == emp.id
             ).first()
             
+            # AI Validation: Validate constraints (excluding self-conflict)
+            from app.services.ai_scheduler import validate_replacement_constraints
+            exclude_id = existing_schedule.id if existing_schedule else None
+            is_valid, err_msg = validate_replacement_constraints(self.db, emp.id, date, shift.id, exclude_schedule_id=exclude_id)
+            if not is_valid:
+                return False, f"AI Validation Failed: {err_msg}"
+            
             original_shift_id = None
             if existing_schedule:
                 original_shift_id = existing_schedule.shift_id
@@ -249,6 +256,13 @@ class WeeklyShiftManager:
                 Schedule.employee_id == emp.id
             ).first()
             
+            # AI Validation: Validate constraints (excluding self-conflict)
+            from app.services.ai_scheduler import validate_replacement_constraints
+            exclude_id = existing_schedule.id if existing_schedule else None
+            is_valid, err_msg = validate_replacement_constraints(self.db, emp.id, date, shift.id, exclude_schedule_id=exclude_id)
+            if not is_valid:
+                return False, f"AI Validation Failed: {err_msg}"
+            
             original_shift_id = None
             if existing_schedule:
                 original_shift_id = existing_schedule.shift_id
@@ -295,6 +309,13 @@ class WeeklyShiftManager:
                 Schedule.date == change.change_date,
                 Schedule.employee_id == change.employee_id
             ).first()
+            
+            # AI Validation: Validate constraints (excluding self-conflict)
+            from app.services.ai_scheduler import validate_replacement_constraints
+            exclude_id = existing_schedule.id if existing_schedule else None
+            is_valid, err_msg = validate_replacement_constraints(self.db, change.employee_id, change.change_date, change.new_shift_id, exclude_schedule_id=exclude_id)
+            if not is_valid:
+                return False, f"AI Validation Failed: {err_msg}"
             
             if existing_schedule:
                 existing_schedule.shift_id = change.new_shift_id

@@ -305,6 +305,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
     { icon: <Users size={20} />, label: 'Employees', path: `/${roleSlug}/employees`, roles: ['admin', 'manager'] },
     { icon: <Calendar size={20} />, label: 'Shifts', path: `/${roleSlug}/shifts`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <ClipboardList size={20} />, label: 'Leaves', path: `/${roleSlug}/leaves`, roles: ['admin', 'manager', 'supervisor'] },
+    { icon: <Clock size={20} />, label: 'Overtime', path: `/${roleSlug}/overtime`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <RefreshCw size={20} />, label: 'Weekly Off Swap', path: `/${roleSlug}/weekly-off-swap`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <CalendarRange size={20} />, label: 'Weekly Off', path: `/${roleSlug}/weekly-off`, roles: ['admin', 'manager', 'supervisor'] },
     { icon: <Upload size={20} />, label: 'Upload', path: `/${roleSlug}/upload`, roles: ['admin', 'manager'] },
@@ -318,6 +319,7 @@ const DashboardLayout = ({ title, children, role = "Employee" }) => {
     { icon: <Shield size={20} />, label: 'Access Control', path: `/${roleSlug}/users`, roles: ['admin'] },
     { icon: <Settings size={20} />, label: 'Settings', path: `/${roleSlug}/settings`, roles: ['admin', 'manager', 'supervisor'] },
   ].filter(item => item.roles.includes(userRole));
+
 
   const handleLogout = () => {
     localStorage.clear();

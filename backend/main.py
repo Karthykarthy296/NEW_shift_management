@@ -8,7 +8,7 @@ if sys.stderr.encoding != 'utf-8':
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from app.database.database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department, ScheduleGenerationLog, WeeklyShiftChange
+from app.database.database import engine, SessionLocal, Base, User, Employee, Shift, Schedule, Leave, WeeklyOffSwap, OvertimeLog, Department, ScheduleGenerationLog, WeeklyShiftChange, Overtime
 from app.models import schemas
 from app.middleware import auth
 from app.services import ai_scheduler
@@ -19,10 +19,31 @@ from typing import Optional, List, Dict
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.routes.activity_routes import router as activity_router
+from app.routes.overtime_routes import router as overtime_router
 from app.middleware.activity_middleware import ActivityLoggingMiddleware
 from app.utils.activity_logger import log_activity
 
+
 Base.metadata.create_all(bind=engine)
+
+# Auto-seed default users if database is empty
+def seed_default_users():
+    db = SessionLocal()
+    try:
+        if db.query(User).count() == 0:
+            print("Auto-seeding default credentials...")
+            db.add(User(username="admin", name="Admin User", password_hash=auth.get_password_hash("admin123"), role="admin"))
+            db.add(User(username="manager", name="Manager User", password_hash=auth.get_password_hash("admin123"), role="manager"))
+            db.add(User(username="supervisor", name="Supervisor User", password_hash=auth.get_password_hash("admin123"), role="supervisor"))
+            db.commit()
+            print("Default credentials successfully seeded.")
+    except Exception as e:
+        print(f"Warning: Could not seed default users: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+seed_default_users()
 
 app = FastAPI()
 
@@ -898,7 +919,7 @@ async def upload_excel(background_tasks: BackgroundTasks, file: UploadFile = Fil
         )
         raise HTTPException(status_code=500, detail=f"Error uploading Excel file: {str(e)}")
 
-@schedules_router.get("/schedule-generation-status")
+@app.get("/schedule-generation-status")
 async def get_schedule_generation_status():
     global is_generating_schedule
     return {"is_generating": is_generating_schedule}
@@ -1960,6 +1981,73 @@ def update_schedule(data: schemas.ScheduleUpdate, db: Session = Depends(get_db),
     db.commit()
     return {"msg": "Schedule updated successfully"}
 
+@schedules_router.post("/assign-emergency-replacement")
+async def assign_emergency_replacement(request: schemas.EmergencyReplacementRequest, db: Session = Depends(get_db), current_user: User = Depends(require_role(["supervisor", "manager", "admin"]))):
+    """
+    Intelligent AI replacement assignment:
+    - Finds the shift the absent employee was scheduled to work on target date.
+    - Selects the best replacement employee satisfying all strict rules and priorities.
+    - Saves the override schedule to DB.
+    - Audit logs the action.
+    """
+    # 1. Validate date format
+    try:
+        datetime.datetime.strptime(request.date, '%Y-%m-%d')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    # 2. Check if absent employee exists
+    absent_emp = db.query(Employee).filter(Employee.id == request.absent_employee_id).first()
+    if not absent_emp:
+        raise HTTPException(status_code=404, detail="Absent employee not found")
+
+    # 3. Find the shift the absent employee was supposed to work
+    sched = db.query(Schedule).filter(
+        Schedule.employee_id == request.absent_employee_id,
+        Schedule.date == request.date
+    ).first()
+
+    if not sched:
+        raise HTTPException(status_code=404, detail=f"No scheduled shift found for employee {absent_emp.name} on {request.date}")
+
+    # 4. Use the AI engine to find the best replacement
+    best_c = ai_scheduler.find_best_replacement(db, request.absent_employee_id, request.date, sched.shift_id)
+    if not best_c:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No eligible replacement found for {absent_emp.name} on {request.date} satisfying constraints."
+        )
+
+    # 5. Apply the replacement schedule
+    sched.employee_id = best_c.id
+    sched.is_override = True
+    sched.replaced_employee_id = request.absent_employee_id
+    db.commit()
+
+    # 6. Audit Log compliance
+    reason_str = request.reason or "Emergency shift replacement"
+    await log_activity(
+        db=db,
+        activity="Emergency Shift Replacement",
+        module_name="Schedule Management",
+        status="success",
+        description=f"AI assigned {best_c.name} as emergency replacement for {absent_emp.name} (Shift: {sched.shift.name}) on {request.date}. Reason: {reason_str}",
+        user_id=current_user.id,
+        username=current_user.username,
+        role=current_user.role
+    )
+
+    return {
+        "status": "success",
+        "message": f"Successfully assigned {best_c.name} to replace {absent_emp.name} on {request.date}",
+        "replacement": {
+            "employee_id": best_c.id,
+            "employee_name": best_c.name,
+            "role": best_c.role,
+            "shift_name": sched.shift.name
+        }
+    }
+
 @schedules_router.post("/overtime/calculate")
 def calculate_overtime(data: schemas.OvertimeRequest, db: Session = Depends(get_db), current_user: User = Depends(require_role(["manager", "admin", "supervisor"]))):
     # AI validation for overtime request
@@ -2469,9 +2557,12 @@ async def get_weekly_off_roster(
 
 # Include Routers
 app.include_router(auth_router)
+app.include_router(overtime_router)
 app.include_router(employees_router)
 app.include_router(schedules_router)
 app.include_router(leaves_router)
 app.include_router(reports_router)
 app.include_router(departments_router)
 app.include_router(activity_router)
+
+

@@ -109,3 +109,44 @@ class WeeklyOffSwapApproval(BaseModel):
     swap_id: int
     approve: bool
     rejection_reason: Optional[str] = None
+
+
+class OvertimeCreate(BaseModel):
+    employee_id: int
+    overtime_hours: float
+    overtime_date: str  # YYYY-MM-DD
+    reason: Optional[str] = None
+    shift: Optional[str] = None
+    status: Optional[str] = "pending"
+
+
+class OvertimeUpdate(BaseModel):
+    overtime_hours: Optional[float] = None
+    overtime_date: Optional[str] = None
+    reason: Optional[str] = None
+    shift: Optional[str] = None
+    status: Optional[str] = None  # pending, approved, rejected
+
+
+class OvertimeDbResponse(BaseModel):
+    id: int
+    employee_id: int
+    employee_name: str
+    department: str
+    shift: str
+    overtime_hours: float
+    overtime_date: str
+    reason: Optional[str] = None
+    approved_by: Optional[int] = None
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class EmergencyReplacementRequest(BaseModel):
+    date: str
+    absent_employee_id: int
+    reason: Optional[str] = None
+

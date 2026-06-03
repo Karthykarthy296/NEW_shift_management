@@ -43,9 +43,12 @@ if DATABASE_TYPE == "mysql":
 
 if engine is None:
     DATABASE_TYPE = "sqlite"
-    DATABASE_URL = "sqlite:///./shift_db_new.db"
+    # Resolve the database path relative to backend directory to ensure consistency across execution directories
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    db_path = os.path.join(base_dir, "shift_db_new.db")
+    DATABASE_URL = f"sqlite:///{db_path}"
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-    logger.info("✓ Connected to SQLite database.")
+    logger.info(f"✓ Connected to SQLite database at {db_path}.")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -208,3 +211,22 @@ class ActivityLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     user = relationship("User", foreign_keys=[user_id])
+
+
+class Overtime(Base):
+    __tablename__ = "overtimes"
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id"), index=True)
+    employee_name = Column(String(100), index=True)
+    department = Column(String(100), index=True)
+    shift = Column(String(50), index=True)
+    overtime_hours = Column(Float, nullable=False)
+    overtime_date = Column(String(20), index=True)
+    reason = Column(String(255), nullable=True)
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    status = Column(String(20), default="pending", index=True)  # pending, approved, rejected
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    employee = relationship("Employee", foreign_keys=[employee_id])
+    approver = relationship("User", foreign_keys=[approved_by])
+

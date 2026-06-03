@@ -3,6 +3,21 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   AreaChart, Area, PieChart, Pie, Cell, LineChart, Line, Legend
 } from 'recharts';
+
+const SafeResponsiveContainer = ({ children, ...props }) => {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return <div style={{ width: props.width || '100%', height: props.height || '100%' }} />;
+
+  return (
+    <ResponsiveContainer {...props}>
+      {children}
+    </ResponsiveContainer>
+  );
+};
 import { motion } from 'framer-motion';
 import { 
   Users, 
@@ -161,7 +176,7 @@ const DashboardCharts = ({ summary, role = "Admin" }) => {
           </div>
 
           <div className="h-[400px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={400} minHeight={400}>
+            <SafeResponsiveContainer width="100%" height="100%" minWidth={400} minHeight={400}>
               <AreaChart data={workforceTrends}>
                 <defs>
                   <linearGradient id="colorActive" x1="0" y1="0" x2="0" y2="1">
@@ -198,7 +213,7 @@ const DashboardCharts = ({ summary, role = "Admin" }) => {
                 <Area type="monotone" dataKey="active" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorActive)" />
                 <Area type="monotone" dataKey="rest" stroke="#f59e0b" strokeWidth={4} fillOpacity={1} fill="url(#colorRest)" />
               </AreaChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-12 pt-10 border-t border-slate-50">
@@ -242,7 +257,7 @@ const DashboardCharts = ({ summary, role = "Admin" }) => {
             </div>
             
             <div className="h-[300px] w-full relative min-h-[300px]">
-              <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={300}>
+              <SafeResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={300}>
                 <PieChart>
                   <Pie
                     data={shiftData}
@@ -257,7 +272,7 @@ const DashboardCharts = ({ summary, role = "Admin" }) => {
                   </Pie>
                   <Tooltip />
                 </PieChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                  <p className="text-3xl font-black text-slate-900 leading-none tracking-tight">{stats.total_employees}</p>
                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-2">Personnel</p>

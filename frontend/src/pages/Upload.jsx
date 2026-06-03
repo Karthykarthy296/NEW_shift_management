@@ -64,7 +64,9 @@ export default function Upload() {
       // Poll schedule-generation-status
       const pollInterval = setInterval(async () => {
         try {
-          const statusRes = await axios.get(`${API_URL}/schedule-generation-status`);
+          const statusRes = await axios.get(`${API_URL}/schedule-generation-status`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
           if (!statusRes.data.is_generating) {
             clearInterval(pollInterval);
             setGenerating(false);
