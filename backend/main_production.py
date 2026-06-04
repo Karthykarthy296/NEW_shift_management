@@ -274,10 +274,12 @@ async def get_schedule(
         
         # Check if schedule exists, generate if needed
         try:
-            existing_schedule = db.query(Schedule).filter(Schedule.date == safe_date).first()
-            if not existing_schedule:
-                logger.info(f"Generating schedule for date: {safe_date}")
-                ai_scheduler.generate_ai_schedule(db, safe_date)
+            total_employees = db.query(Employee).count()
+            if total_employees > 0:
+                schedule_count = db.query(Schedule).filter(Schedule.date == safe_date).count()
+                if schedule_count < max(1, total_employees // 2):
+                    logger.info(f"Generating schedule for date: {safe_date}")
+                    ai_scheduler.generate_ai_schedule(db, safe_date)
         except Exception as e:
             logger.error(f"Schedule generation error: {str(e)}")
             # Continue with empty schedule rather than failing
@@ -405,11 +407,38 @@ async def get_employees(db: Session = Depends(get_db)):
             logger.error(f"Employee query error: {str(e)}")
             employees = []
         
+        today_str = datetime.date.today().isoformat()
+        day_name = datetime.date.today().strftime('%A')
+        try:
+            schedules = db.query(Schedule).options(joinedload(Schedule.shift)).filter(Schedule.date == today_str).all()
+            sched_map = {s.employee_id: s.shift.name for s in schedules if s.shift}
+        except Exception as e:
+            logger.error(f"Schedule mapping error: {str(e)}")
+            sched_map = {}
+
+        try:
+            leaves = db.query(Leave).filter(Leave.date == today_str).all()
+            leave_emp_ids = {l.employee_id for l in leaves}
+        except Exception as e:
+            logger.error(f"Leaves mapping error: {str(e)}")
+            leave_emp_ids = set()
+
         result = []
         for emp in employees:
             try:
                 serialized = serialize_employee(emp)
                 if serialized:
+                    # Calculate assigned shift for today
+                    if emp.id in sched_map:
+                        assigned_shift = sched_map[emp.id]
+                    elif emp.weekly_off == day_name:
+                        assigned_shift = "Week Off"
+                    elif emp.id in leave_emp_ids:
+                        assigned_shift = "On Leave"
+                    else:
+                        assigned_shift = "Not Assigned"
+                    
+                    serialized["assigned_shift"] = assigned_shift
                     result.append(serialized)
             except Exception as e:
                 logger.error(f"Employee serialization error: {str(e)}")

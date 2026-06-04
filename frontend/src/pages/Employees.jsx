@@ -495,8 +495,14 @@ export default function Employees() {
                           )
                           : (
                             <div className="flex items-center gap-2">
-                               <div className={`w-2 h-2 rounded-full ${emp.preferred_shift === 'Morning' ? 'bg-amber-400' : emp.preferred_shift === 'Afternoon' ? 'bg-yellow-400' : emp.preferred_shift === 'Evening' ? 'bg-indigo-400' : 'bg-purple-400'}`}></div>
-                               <span className="text-sm font-bold text-slate-600">{emp.preferred_shift}</span>
+                               <div className={`w-2 h-2 rounded-full ${
+                                 emp.assigned_shift === 'Morning' ? 'bg-amber-400' : 
+                                 emp.assigned_shift === 'Afternoon' ? 'bg-yellow-400' : 
+                                 emp.assigned_shift === 'Evening' ? 'bg-indigo-400' : 
+                                 emp.assigned_shift === 'Night' ? 'bg-purple-400' : 
+                                 emp.assigned_shift === 'Week Off' ? 'bg-emerald-400' : 'bg-slate-400'
+                               }`}></div>
+                               <span className="text-sm font-bold text-slate-600">{emp.assigned_shift || emp.preferred_shift || 'Not Assigned'}</span>
                             </div>
                           )
                         }

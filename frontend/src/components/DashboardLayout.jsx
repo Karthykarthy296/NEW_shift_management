@@ -687,7 +687,6 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [deptFilter, setDeptFilter] = useState("All Depts");
-  const [activeShiftTab, setActiveShiftTab] = useState("Morning");
   const itemsPerPage = 20;
 
   const fetch4WeekSchedule = async () => {
@@ -738,38 +737,6 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
   const weeks = scheduleData?.weeks || {};
   const currentWeekData = weeks[selectedWeek] || { employees: [] };
   const allEmployees = currentWeekData.employees || [];
-
-  const handleManualOverride = async (empId, targetShift) => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
-    
-    const weekStartDate = weeks[selectedWeek]?.start_date;
-    if (!weekStartDate) return;
-    
-    const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-    const dayOffset = daysOfWeek.indexOf(selectedDay);
-    if (dayOffset === -1) return;
-    
-    const dateObj = new Date(weekStartDate);
-    dateObj.setDate(dateObj.getDate() + dayOffset);
-    const targetDateStr = dateObj.toISOString().split('T')[0];
-
-    try {
-      const res = await axios.post('http://127.0.0.1:8000/update-shift-assignment', {
-        date: targetDateStr,
-        emp_id: empId,
-        new_shift: targetShift,
-        reason: "Manual manager override from UI"
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      alert(res.data.message || 'Override applied successfully!');
-      fetch4WeekSchedule();
-      onUpdate && onUpdate();
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to apply manual override.');
-    }
-  };
 
   // Get distinct roles and departments for filter
   const distinctRoles = [...new Set(allEmployees.map(e => e.role).filter(Boolean))].sort();
@@ -831,13 +798,9 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
     }
   };
 
-  // Pagination bounds based on view type (weekly overview vs daily tab-based view)
-  const dailyFilteredEmployees = selectedDay === "All"
-    ? filteredEmployees
-    : filteredEmployees.filter(emp => emp.schedules && emp.schedules[selectedDay] === activeShiftTab);
-
-  const totalPages = Math.ceil(dailyFilteredEmployees.length / itemsPerPage);
-  const paginatedEmployees = dailyFilteredEmployees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  // Pagination bounds
+  const totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
+  const paginatedEmployees = filteredEmployees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <div style={{ backgroundColor: '#ffffff', minHeight: '100%', borderRadius: '1.5rem', padding: '2.5rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
@@ -1125,73 +1088,32 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
           </table>
         </div>
       ) : (
-        /* DAILY SHIFT TAB-BASED LAYOUT */
+        /* DAILY SHIFT GROUP CARDS LAYOUT */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-          {/* Tab buttons */}
-          <div style={{ display: 'flex', gap: '0.75rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem', flexWrap: 'wrap' }}>
-            {["Morning", "Evening", "Night"].map(tab => {
-              const count = filteredEmployees.filter(emp => emp.schedules && emp.schedules[selectedDay] === tab).length;
-              const isActive = activeShiftTab === tab;
-              return (
-                <button
-                  key={tab}
-                  onClick={() => { setActiveShiftTab(tab); setCurrentPage(1); }}
-                  style={{
-                    padding: '0.75rem 1.5rem',
-                    borderRadius: '0.75rem',
-                    fontWeight: 800,
-                    fontSize: '0.9rem',
-                    cursor: 'pointer',
-                    border: isActive ? '2px solid #7c3aed' : '1px solid #e2e8f0',
-                    background: isActive ? '#f5f3ff' : '#ffffff',
-                    color: isActive ? '#7c3aed' : '#475569',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <span>{tab} Shift</span>
-                  <span style={{
-                    fontSize: '0.75rem',
-                    padding: '0.15rem 0.5rem',
-                    borderRadius: '999px',
-                    background: isActive ? '#7c3aed' : '#e2e8f0',
-                    color: isActive ? '#ffffff' : '#475569',
-                    fontWeight: 800
-                  }}>
-                    {count}
+          {["Morning", "Afternoon", "Evening", "Night", "WEEK OFF"].map(shift => {
+            const shiftEmployees = paginatedEmployees.filter(emp => emp.schedules && emp.schedules[selectedDay] === shift);
+            if (shiftEmployees.length === 0) return null;
+
+            const isOff = shift === "WEEK OFF";
+            
+            return (
+              <div key={shift}>
+                {/* Shift Sub-Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', borderBottom: '2px solid #f1f5f9', paddingBottom: '0.5rem' }}>
+                  <span style={getShiftBadgeStyle(shift)}>{shift}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 700 }}>
+                    {shiftEmployees.length} {shiftEmployees.length === 1 ? 'employee' : 'employees'} assigned
                   </span>
-                </button>
-              );
-            })}
-          </div>
+                </div>
 
-          <div>
-            {/* Shift Header showing active tab */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-              <span style={getShiftBadgeStyle(activeShiftTab)}>{activeShiftTab}</span>
-              <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 700 }}>
-                {dailyFilteredEmployees.length} {dailyFilteredEmployees.length === 1 ? 'employee' : 'employees'} found
-              </span>
-            </div>
-
-            {/* Grid layout for employee cards in this shift */}
-            {paginatedEmployees.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '3rem 2rem', border: '1px dashed #cbd5e1', borderRadius: '1rem', color: '#64748b' }}>
-                <p style={{ fontWeight: 600 }}>No employees scheduled for {activeShiftTab} shift under current filters.</p>
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
-                {paginatedEmployees.map((emp, index) => {
-                  const isOff = activeShiftTab === "WEEK OFF";
-                  
-                  return (
+                {/* Grid layout for employee cards in this shift */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                  {shiftEmployees.map((emp, index) => (
                     <motion.div
                       key={emp.id || index}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      whileHover={{ scale: 1.01, borderColor: '#c4b5fd', background: '#f5f3ff' }}
+                      whileHover={{ scale: 1.01, borderColor: isOff ? '#fde68a' : '#c4b5fd', background: isOff ? '#fffbeb' : '#f5f3ff' }}
                       style={{
                         background: '#ffffff',
                         border: '1px solid #e2e8f0',
@@ -1199,11 +1121,7 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
                         padding: '1.25rem',
                         cursor: 'pointer',
                         transition: 'all 0.2s',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        gap: '1rem'
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
                       }}
                       onClick={async () => {
                         if (isOff) {
@@ -1225,80 +1143,47 @@ export const ShiftDisplay = ({ schedule, onUpdate }) => {
                         }
                       }}
                     >
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                          <div style={{
-                            width: '38px', height: '38px', borderRadius: '0.55rem',
-                            background: '#f5f3ff',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '1rem', fontWeight: 900, color: '#7c3aed',
-                            flexShrink: 0,
-                            border: '1px solid #ddd6fe',
-                          }}>
-                            {(emp.name || "").charAt(0)}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                        <div style={{
+                          width: '38px', height: '38px', borderRadius: '0.55rem',
+                          background: isOff ? '#fffbeb' : '#f5f3ff',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '1rem', fontWeight: 900, color: isOff ? '#d97706' : '#7c3aed',
+                          flexShrink: 0,
+                          border: isOff ? '1px solid #fde68a' : '1px solid #ddd6fe',
+                        }}>
+                          {emp.name.charAt(0)}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {emp.name}
                           </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: '#0f172a', fontWeight: 800, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {emp.name}
-                            </div>
-                            <div style={{ color: '#7c3aed', fontSize: '0.75rem', fontWeight: 700 }}>
-                              {emp.emp_id}
-                            </div>
+                          <div style={{ color: isOff ? '#d97706' : '#7c3aed', fontSize: '0.75rem', fontWeight: 700 }}>
+                            {emp.emp_id}
                           </div>
                         </div>
-                        
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem', marginBottom: '0.5rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <span style={{
-                              width: '6px', height: '6px', borderRadius: '50%',
-                              background: '#10b981',
-                              display: 'inline-block'
-                            }} />
-                            <span style={{ color: '#64748b', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                              {emp.role}
-                            </span>
-                          </div>
-                          <span style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700 }}>
-                            {emp.department}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{
+                            width: '6px', height: '6px', borderRadius: '50%',
+                            background: isOff ? '#f59e0b' : '#10b981',
+                            display: 'inline-block'
+                          }} />
+                          <span style={{ color: '#64748b', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            {emp.role}
                           </span>
                         </div>
-                      </div>
-
-                      {/* Manual Override Actions */}
-                      <div style={{ display: 'flex', gap: '0.5rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
-                        {["Morning", "Evening", "Night"].filter(s => s !== activeShiftTab).map(targetShift => (
-                          <button
-                            key={targetShift}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleManualOverride(emp.emp_id, targetShift);
-                            }}
-                            style={{
-                              flex: 1,
-                              padding: '0.4rem 0.5rem',
-                              borderRadius: '0.5rem',
-                              fontSize: '0.72rem',
-                              fontWeight: 800,
-                              background: '#ffffff',
-                              border: '1px solid #e2e8f0',
-                              color: '#6366f1',
-                              cursor: 'pointer',
-                              textAlign: 'center',
-                              transition: 'all 0.2s',
-                            }}
-                            onMouseEnter={ev => { ev.currentTarget.style.background = '#f5f3ff'; ev.currentTarget.style.borderColor = '#c4b5fd'; }}
-                            onMouseLeave={ev => { ev.currentTarget.style.background = '#ffffff'; ev.currentTarget.style.borderColor = '#e2e8f0'; }}
-                          >
-                            → {targetShift}
-                          </button>
-                        ))}
+                        <span style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700 }}>
+                          {emp.department}
+                        </span>
                       </div>
                     </motion.div>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
-            )}
-          </div>
+            );
+          })}
         </div>
       )}
 

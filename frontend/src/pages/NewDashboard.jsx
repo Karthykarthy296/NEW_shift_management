@@ -506,22 +506,28 @@ export default function NewDashboard() {
               <div className="flex gap-3 p-4 bg-green-50 rounded-lg border border-green-200">
                 <CheckCircle2 className="text-green-600 flex-shrink-0" size={20} />
                 <div>
-                  <p className="font-semibold text-gray-900 text-sm mb-1">All shifts are perfectly balanced today.</p>
-                  <p className="text-xs text-gray-600">Morning: 333, Afternoon: 334, Night: 333 employees.</p>
+                  <p className="font-semibold text-gray-900 text-sm mb-1">Today's shift counts from database:</p>
+                  <p className="text-xs text-gray-600">
+                    {Object.entries(summary?.shift_assignments || {}).map(([name, count]) => `${name}: ${count}`).join(', ') || 'No active assignments'}
+                  </p>
                 </div>
               </div>
               <div className="flex gap-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <AlertCircle className="text-blue-600 flex-shrink-0" size={20} />
                 <div>
-                  <p className="font-semibold text-gray-900 text-sm mb-1">50% of employees are currently on leave.</p>
-                  <p className="text-xs text-gray-600">500 employees present, 500 on leave. Monitor attendance patterns.</p>
+                  <p className="font-semibold text-gray-900 text-sm mb-1">
+                    {totalEmployees > 0 ? ((onLeaveToday / totalEmployees) * 100).toFixed(1) : 0}% of employees are currently on leave.
+                  </p>
+                  <p className="text-xs text-gray-600">{presentToday} employees present, {onLeaveToday} on leave. Monitor attendance patterns.</p>
                 </div>
               </div>
               <div className="flex gap-3 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
                 <AlertCircle className="text-indigo-600 flex-shrink-0" size={20} />
                 <div>
-                  <p className="font-semibold text-gray-900 text-sm mb-1">All 5 departments have equal distribution.</p>
-                  <p className="text-xs text-gray-600">Each department has exactly 200 employees for optimal balance.</p>
+                  <p className="font-semibold text-gray-900 text-sm mb-1">All {departmentsCount} departments loaded.</p>
+                  <p className="text-xs text-gray-600">
+                    {Object.entries(summary?.department_distribution || {}).map(([name, count]) => `${name}: ${count}`).join(', ') || 'No departments found'}
+                  </p>
                 </div>
               </div>
               <button className="w-full flex items-center justify-center gap-2 py-2 text-sm font-semibold text-blue-600 hover:text-blue-700">

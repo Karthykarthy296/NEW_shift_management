@@ -568,27 +568,118 @@ def generate_ai_schedule(db: Session, target_date: str = None, force_refresh: bo
     working_shifts = get_working_shifts(db)
     num_working_shifts = len(working_shifts)
     
-    # 1. Fetch previous day shift names to rotate fairly
-    prev_date = (target_date_obj - datetime.timedelta(days=1)).isoformat()
-    prev_schedules = (
+    # Calculate weekly shift for each employee
+    # Get Monday of the target week
+    monday_date_obj = target_date_obj - datetime.timedelta(days=target_date_obj.weekday())
+    sunday_date_obj = monday_date_obj + datetime.timedelta(days=6)
+    
+    # 1. Bulk query all working schedules for the current week
+    current_week_schedules = (
         db.query(Schedule.employee_id, Shift.name)
         .join(Shift, Schedule.shift_id == Shift.id)
-        .filter(Schedule.date == prev_date)
+        .filter(Schedule.date >= monday_date_obj.isoformat())
+        .filter(Schedule.date <= sunday_date_obj.isoformat())
+        .filter(func.lower(Shift.name) != "week off")
         .all()
     )
-    prev_shift_names = {s.employee_id: s.name for s in prev_schedules}
+    current_week_by_emp = {}
+    for emp_id, shift_name in current_week_schedules:
+        if emp_id not in current_week_by_emp:
+            current_week_by_emp[emp_id] = []
+        current_week_by_emp[emp_id].append(shift_name)
+
+    # 2. Bulk query all working schedules for the previous week
+    prev_monday = monday_date_obj - datetime.timedelta(days=7)
+    prev_sunday = monday_date_obj - datetime.timedelta(days=1)
     
-    # 2. Map shift name to index
-    shift_name_to_idx = {s.name.lower(): idx for idx, s in enumerate(working_shifts)}
+    prev_week_schedules = (
+        db.query(Schedule.employee_id, Shift.name)
+        .join(Shift, Schedule.shift_id == Shift.id)
+        .filter(Schedule.date >= prev_monday.isoformat())
+        .filter(Schedule.date <= prev_sunday.isoformat())
+        .filter(func.lower(Shift.name) != "week off")
+        .all()
+    )
+    prev_week_by_emp = {}
+    for emp_id, shift_name in prev_week_schedules:
+        if emp_id not in prev_week_by_emp:
+            prev_week_by_emp[emp_id] = []
+        prev_week_by_emp[emp_id].append(shift_name)
+
+    # --- True Shift Balancing Logic ---
+    total_emp_count = len(employees)
+    target_capacity = {
+        "Morning": total_emp_count // 3,
+        "Evening": total_emp_count // 3,
+        "Night": total_emp_count - 2 * (total_emp_count // 3)
+    }
+
+    weekly_shift_by_emp = {}
+    weekly_shift_counts = {"Morning": 0, "Evening": 0, "Night": 0}
     
-    # 3. Target capacities for perfect balance
-    num_emps = len(available)
-    target_caps = [num_emps // num_working_shifts] * num_working_shifts
-    for i in range(num_emps % num_working_shifts):
-        target_caps[i] += 1
-        
-    shift_counts = [0] * num_working_shifts
-    
+    # Pass 0: Locked-in current week schedules (from Monday to Sunday)
+    for emp in employees:
+        current_scheds = current_week_by_emp.get(emp.id, [])
+        if current_scheds:
+            from collections import Counter
+            most_common = Counter(current_scheds).most_common(1)[0][0].capitalize()
+            if most_common in weekly_shift_counts:
+                weekly_shift_by_emp[emp.id] = most_common
+                weekly_shift_counts[most_common] += 1
+
+    # Pass 1: Rotation from previous week (Monday to Sunday)
+    for emp in employees:
+        if emp.id not in weekly_shift_by_emp:
+            prev_scheds = prev_week_by_emp.get(emp.id, [])
+            if prev_scheds:
+                from collections import Counter
+                most_common = Counter(prev_scheds).most_common(1)[0][0]
+                rot_map = {
+                    "morning": "evening",
+                    "evening": "night",
+                    "night": "morning"
+                }
+                rotated_shift = rot_map.get(most_common.lower().strip(), "morning").capitalize()
+                
+                # Check if rotated shift has space under target capacity
+                if weekly_shift_counts.get(rotated_shift, 0) < target_capacity.get(rotated_shift, 0):
+                    weekly_shift_by_emp[emp.id] = rotated_shift
+                    weekly_shift_counts[rotated_shift] += 1
+                else:
+                    # No space, assign to the shift with the lowest current count
+                    fallback_shift = min(weekly_shift_counts, key=weekly_shift_counts.get)
+                    weekly_shift_by_emp[emp.id] = fallback_shift
+                    weekly_shift_counts[fallback_shift] += 1
+
+    # Pass 2: Preferred shift
+    for emp in employees:
+        if emp.id not in weekly_shift_by_emp:
+            pref = (emp.preferred_shift or "").lower().strip()
+            preferred_shift = None
+            if "morning" in pref:
+                preferred_shift = "Morning"
+            elif "evening" in pref:
+                preferred_shift = "Evening"
+            elif "night" in pref:
+                preferred_shift = "Night"
+                
+            if preferred_shift:
+                if weekly_shift_counts.get(preferred_shift, 0) < target_capacity.get(preferred_shift, 0):
+                    weekly_shift_by_emp[emp.id] = preferred_shift
+                    weekly_shift_counts[preferred_shift] += 1
+                else:
+                    # No space, assign to the shift with the lowest current count
+                    fallback_shift = min(weekly_shift_counts, key=weekly_shift_counts.get)
+                    weekly_shift_by_emp[emp.id] = fallback_shift
+                    weekly_shift_counts[fallback_shift] += 1
+
+    # Pass 3: Fallback (unassigned / new employees)
+    for emp in employees:
+        if emp.id not in weekly_shift_by_emp:
+            fallback_shift = min(weekly_shift_counts, key=weekly_shift_counts.get)
+            weekly_shift_by_emp[emp.id] = fallback_shift
+            weekly_shift_counts[fallback_shift] += 1
+
     schedule_mappings = []
     
     # Sort available: critical employees first, then others, to ensure critical employees get distributed first!
@@ -613,35 +704,12 @@ def generate_ai_schedule(db: Session, target_date: str = None, force_refresh: bo
         dept_id = emp.department_id or 0
         role = emp.role.strip() if emp.role else ""
         
-        prev_shift = prev_shift_names.get(emp.id)
-        
-        preferred_idx = 0
-        if prev_shift and prev_shift.lower() in shift_name_to_idx:
-            prev_idx = shift_name_to_idx[prev_shift.lower()]
-            preferred_idx = (prev_idx + 1) % num_working_shifts
-        else:
-            preferred_idx = (target_date_obj.toordinal() + (emp.id or 0)) % num_working_shifts
+        assigned_shift_name = weekly_shift_by_emp.get(emp.id, "Morning")
+        chosen_shift = next((s for s in working_shifts if s.name.lower() == assigned_shift_name.lower()), None)
+        if not chosen_shift:
+            chosen_shift = working_shifts[0]
             
-        # Helper to get current role count in dept for shift_idx
-        def get_role_count(s_idx):
-            if dept_id not in dept_shift_role_counts:
-                return 0
-            if s_idx not in dept_shift_role_counts[dept_id]:
-                return 0
-            return dept_shift_role_counts[dept_id][s_idx].get(role, 0)
-
-        candidate_indices = sorted(
-            range(num_working_shifts),
-            key=lambda idx: (
-                0 if shift_counts[idx] < target_caps[idx] else 1,
-                get_role_count(idx),
-                (idx - preferred_idx) % num_working_shifts
-            )
-        )
-        
-        chosen_idx = candidate_indices[0]
-        chosen_shift = working_shifts[chosen_idx]
-        shift_counts[chosen_idx] += 1
+        chosen_idx = next((idx for idx, s in enumerate(working_shifts) if s.id == chosen_shift.id), 0)
         
         # Update counts
         if dept_id not in dept_shift_role_counts:

@@ -1,4 +1,15 @@
 services:
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: shift_db_new
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
   backend:
     build:
       context: ./backend
@@ -6,10 +17,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_TYPE=sqlite
+      - DATABASE_TYPE=mysql
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=rootpassword
+      - MYSQL_DB=shift_db_new
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - db
     volumes:
-      - ./backend/shift_db_new.db:/app/shift_db_new.db
       - ./backend/logs:/app/logs
 
   frontend:
@@ -22,3 +39,6 @@ services:
       - "80:80"
     depends_on:
       - backend
+
+volumes:
+  mysql_data:

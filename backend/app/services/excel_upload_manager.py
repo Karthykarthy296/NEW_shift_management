@@ -408,6 +408,117 @@ class ExcelUploadManager:
             )
             prev_shift_names = {s.employee_id: s.name for s in prev_schedules}
             
+            # Calculate weekly shift for each employee for this start_date
+            monday_dt = start_dt - timedelta(days=start_dt.weekday())
+            sunday_dt = monday_dt + timedelta(days=6)
+            
+            # 1. Bulk query current week schedules
+            current_week_schedules = (
+                self.db.query(Schedule.employee_id, Shift.name)
+                .join(Shift, Schedule.shift_id == Shift.id)
+                .filter(Schedule.date >= monday_dt.isoformat())
+                .filter(Schedule.date <= sunday_dt.isoformat())
+                .filter(Shift.name != "WEEK OFF")
+                .all()
+            )
+            current_week_by_emp = {}
+            for emp_id, shift_name in current_week_schedules:
+                if emp_id not in current_week_by_emp:
+                    current_week_by_emp[emp_id] = []
+                current_week_by_emp[emp_id].append(shift_name)
+
+            # 2. Bulk query previous week schedules
+            prev_monday = monday_dt - timedelta(days=7)
+            prev_sunday = monday_dt - timedelta(days=1)
+            
+            prev_week_schedules = (
+                self.db.query(Schedule.employee_id, Shift.name)
+                .join(Shift, Schedule.shift_id == Shift.id)
+                .filter(Schedule.date >= prev_monday.isoformat())
+                .filter(Schedule.date <= prev_sunday.isoformat())
+                .filter(Shift.name != "WEEK OFF")
+                .all()
+            )
+            prev_week_by_emp = {}
+            for emp_id, shift_name in prev_week_schedules:
+                if emp_id not in prev_week_by_emp:
+                    prev_week_by_emp[emp_id] = []
+                prev_week_by_emp[emp_id].append(shift_name)
+
+            # --- True Shift Balancing Logic ---
+            total_emp_count = len(employees)
+            target_capacity = {
+                "Morning": total_emp_count // 3,
+                "Evening": total_emp_count // 3,
+                "Night": total_emp_count - 2 * (total_emp_count // 3)
+            }
+
+            weekly_shift_by_emp = {}
+            weekly_shift_counts = {"Morning": 0, "Evening": 0, "Night": 0}
+            
+            # Pass 0: Locked-in current week schedules (from Monday to Sunday)
+            for emp in employees:
+                current_scheds = current_week_by_emp.get(emp.id, [])
+                if current_scheds:
+                    from collections import Counter
+                    most_common = Counter(current_scheds).most_common(1)[0][0].capitalize()
+                    if most_common in weekly_shift_counts:
+                        weekly_shift_by_emp[emp.id] = most_common
+                        weekly_shift_counts[most_common] += 1
+
+            # Pass 1: Rotation from previous week (Monday to Sunday)
+            for emp in employees:
+                if emp.id not in weekly_shift_by_emp:
+                    prev_scheds = prev_week_by_emp.get(emp.id, [])
+                    if prev_scheds:
+                        from collections import Counter
+                        most_common = Counter(prev_scheds).most_common(1)[0][0]
+                        rot_map = {
+                            "morning": "evening",
+                            "evening": "night",
+                            "night": "morning"
+                        }
+                        rotated_shift = rot_map.get(most_common.lower().strip(), "morning").capitalize()
+                        
+                        # Check if rotated shift has space under target capacity
+                        if weekly_shift_counts.get(rotated_shift, 0) < target_capacity.get(rotated_shift, 0):
+                            weekly_shift_by_emp[emp.id] = rotated_shift
+                            weekly_shift_counts[rotated_shift] += 1
+                        else:
+                            # No space, assign to the shift with the lowest current count
+                            fallback_shift = min(weekly_shift_counts, key=weekly_shift_counts.get)
+                            weekly_shift_by_emp[emp.id] = fallback_shift
+                            weekly_shift_counts[fallback_shift] += 1
+
+            # Pass 2: Preferred shift
+            for emp in employees:
+                if emp.id not in weekly_shift_by_emp:
+                    pref = (emp.preferred_shift or "").lower().strip()
+                    preferred_shift = None
+                    if "morning" in pref:
+                        preferred_shift = "Morning"
+                    elif "evening" in pref:
+                        preferred_shift = "Evening"
+                    elif "night" in pref:
+                        preferred_shift = "Night"
+                        
+                    if preferred_shift:
+                        if weekly_shift_counts.get(preferred_shift, 0) < target_capacity.get(preferred_shift, 0):
+                            weekly_shift_by_emp[emp.id] = preferred_shift
+                            weekly_shift_counts[preferred_shift] += 1
+                        else:
+                            # No space, assign to the shift with the lowest current count
+                            fallback_shift = min(weekly_shift_counts, key=weekly_shift_counts.get)
+                            weekly_shift_by_emp[emp.id] = fallback_shift
+                            weekly_shift_counts[fallback_shift] += 1
+
+            # Pass 3: Fallback (unassigned / new employees)
+            for emp in employees:
+                if emp.id not in weekly_shift_by_emp:
+                    fallback_shift = min(weekly_shift_counts, key=weekly_shift_counts.get)
+                    weekly_shift_by_emp[emp.id] = fallback_shift
+                    weekly_shift_counts[fallback_shift] += 1
+
             # Loop for 7 days
             for day_offset in range(7):
                 current_date = start_dt + timedelta(days=day_offset)
@@ -455,64 +566,19 @@ class ExcelUploadManager:
                         total_assignments += 1
                         schedule_summary['daily_schedules'][day_name]['assignments'] += 1
                         
-                # 2. Process active employees using rotational balancing logic
-                num_working_shifts = len(working_shifts)
-                if num_working_shifts > 0 and available_today:
-                    shift_name_to_idx = {s.name.lower(): idx for idx, s in enumerate(working_shifts)}
-                    
-                    num_emps = len(available_today)
-                    target_caps = [num_emps // num_working_shifts] * num_working_shifts
-                    for i in range(num_emps % num_working_shifts):
-                        target_caps[i] += 1
-                        
-                    shift_counts = [0] * num_working_shifts
-                    
-                    # Sort available deterministically by ID
-                    sorted_available = sorted(available_today, key=lambda e: e.id)
-                    
-                    for emp in sorted_available:
+                # 2. Process active employees using weekly consistent shift logic
+                if available_today:
+                    for emp in available_today:
                         # If employee already has a schedule for today and it's overridden, respect it
                         ex_sched = existing_schedules.get((emp.id, date_str))
                         if ex_sched and ex_sched.is_override:
                             total_assignments += 1
                             schedule_summary['daily_schedules'][day_name]['assignments'] += 1
-                            # Update prev_shift_names with overridden shift
-                            overridden_shift = self.db.query(Shift).filter(Shift.id == ex_sched.shift_id).first()
-                            if overridden_shift:
-                                prev_shift_names[emp.id] = overridden_shift.name
                             continue
                             
-                        # Otherwise, calculate rotated shift
-                        prev_shift = prev_shift_names.get(emp.id)
-                        preferred_idx = 0
-                        if prev_shift and prev_shift.lower() in shift_name_to_idx:
-                            prev_idx = shift_name_to_idx[prev_shift.lower()]
-                            preferred_idx = (prev_idx + 1) % num_working_shifts
-                        else:
-                            preferred_idx = (current_date.toordinal() + (emp.id or 0)) % num_working_shifts
-                            
-                        chosen_idx = -1
-                        if shift_counts[preferred_idx] < target_caps[preferred_idx]:
-                            chosen_idx = preferred_idx
-                        else:
-                            # Assign the least-used shift that has capacity
-                            candidate_indices = sorted(
-                                range(num_working_shifts),
-                                key=lambda idx: (shift_counts[idx], (idx - preferred_idx) % num_working_shifts)
-                            )
-                            for idx in candidate_indices:
-                                if shift_counts[idx] < target_caps[idx]:
-                                    chosen_idx = idx
-                                    break
-                                    
-                        if chosen_idx == -1:
-                            chosen_idx = preferred_idx
-                            
-                        assigned_shift = working_shifts[chosen_idx]
-                        shift_counts[chosen_idx] += 1
-                        
-                        # Save assigned shift name to memory for next day's rotation
-                        prev_shift_names[emp.id] = assigned_shift.name
+                        # Assign weekly shift
+                        assigned_shift_name = weekly_shift_by_emp.get(emp.id, "Morning")
+                        assigned_shift = shift_by_name.get(assigned_shift_name, default_shift)
                         
                         if ex_sched:
                             if ex_sched.shift_id != assigned_shift.id:

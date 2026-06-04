@@ -466,8 +466,28 @@ async def get_employees(department: Optional[str] = None, db: Session = Depends(
 
         print(f"Found {len(employees)} employees (filter: {department or 'None'})")
 
+        # Load today's schedules and leaves to check assigned shifts
+        today_str = datetime.date.today().isoformat()
+        day_name = datetime.date.today().strftime('%A')
+        
+        from sqlalchemy.orm import joinedload
+        schedules = db.query(Schedule).options(joinedload(Schedule.shift)).filter(Schedule.date == today_str).all()
+        sched_map = {s.employee_id: s.shift.name for s in schedules if s.shift}
+        
+        leaves = db.query(Leave).filter(Leave.date == today_str).all()
+        leave_emp_ids = {l.employee_id for l in leaves}
+
         employee_list = []
         for emp in employees:
+            if emp.id in sched_map:
+                assigned_shift = sched_map[emp.id]
+            elif emp.weekly_off == day_name:
+                assigned_shift = "Week Off"
+            elif emp.id in leave_emp_ids:
+                assigned_shift = "On Leave"
+            else:
+                assigned_shift = "Not Assigned"
+
             employee_list.append({
                 "id": emp.id,
                 "emp_id": emp.emp_id,
@@ -476,6 +496,7 @@ async def get_employees(department: Optional[str] = None, db: Session = Depends(
                 "department": emp.department.name if emp.department else "Unknown",
                 "department_id": emp.department_id,
                 "preferred_shift": emp.preferred_shift or "Not Assigned",
+                "assigned_shift": assigned_shift,
                 "max_hours": emp.max_hours or 40,
                 "skills": emp.skills or [],
                 "weekly_off": emp.weekly_off or "Not Set",
@@ -988,14 +1009,16 @@ async def get_schedule(background_tasks: BackgroundTasks, date: str = None, db: 
         
         # 1. Check if schedule exists for requested date
         try:
-            existing_schedule = db.query(Schedule).filter(Schedule.date == date_str).first()
-            if not existing_schedule:
-                # Generate inline if missing, with error handling
-                try:
-                    ai_scheduler.generate_ai_schedule(db, date_str)
-                except Exception as e:
-                    # Log error but continue with empty schedule
-                    print(f"Warning: Schedule generation failed for {date_str}: {str(e)}")
+            total_employees = db.query(Employee).count()
+            if total_employees > 0:
+                schedule_count = db.query(Schedule).filter(Schedule.date == date_str).count()
+                if schedule_count < max(1, total_employees // 2):
+                    # Generate inline if missing/incomplete, with error handling
+                    try:
+                        ai_scheduler.generate_ai_schedule(db, date_str)
+                    except Exception as e:
+                        # Log error but continue with empty schedule
+                        print(f"Warning: Schedule generation failed for {date_str}: {str(e)}")
         except Exception as e:
             print(f"Warning: Schedule check failed for {date_str}: {str(e)}")
         
@@ -2261,11 +2284,12 @@ def startup_event():
         has_employees = db.query(Employee).count() > 0
         has_shifts = db.query(Shift).count() > 0
         if has_employees and has_shifts:
-            # Auto-generate schedule for today if not exists (with error handling)
+            # Auto-generate schedule for today if not exists/incomplete (with error handling)
             try:
                 today = datetime.date.today().isoformat()
-                existing_schedule = db.query(Schedule).filter(Schedule.date == today).first()
-                if not existing_schedule:
+                total_employees = db.query(Employee).count()
+                schedule_count = db.query(Schedule).filter(Schedule.date == today).count()
+                if schedule_count < max(1, total_employees // 2):
                     ai_scheduler.generate_ai_schedule(db, today)
             except Exception as e:
                 print(f"[Startup] Error generating today's schedule: {e}")
@@ -2274,11 +2298,12 @@ def startup_event():
             try:
                 next_monday = datetime.date.today()
                 next_monday = next_monday + datetime.timedelta(days=(7 - next_monday.weekday()))
+                total_employees = db.query(Employee).count()
                 for i in range(7):
                     future_date = next_monday + datetime.timedelta(days=i)
                     date_str = future_date.isoformat()
-                    existing_schedule = db.query(Schedule).filter(Schedule.date == date_str).first()
-                    if not existing_schedule:
+                    schedule_count = db.query(Schedule).filter(Schedule.date == date_str).count()
+                    if schedule_count < max(1, total_employees // 2):
                         ai_scheduler.generate_ai_schedule(db, date_str)
             except Exception as e:
                 print(f"[Startup] Error generating next week schedule: {e}")
@@ -2564,5 +2589,8 @@ app.include_router(leaves_router)
 app.include_router(reports_router)
 app.include_router(departments_router)
 app.include_router(activity_router)
+
+if __name__ == '__main__':
+    app.flask_app.run(host='0.0.0.0', port=8000, debug=True)
 
 
