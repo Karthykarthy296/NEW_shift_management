@@ -62,6 +62,8 @@ def to_jsonable(obj):
         return [to_jsonable(x) for x in obj]
     if isinstance(obj, dict):
         return {k: to_jsonable(v) for k, v in obj.items()}
+    if hasattr(obj, '__table__'):
+        return {col.name: to_jsonable(getattr(obj, col.name)) for col in obj.__table__.columns}
     if hasattr(obj, 'dict'):
         return to_jsonable(obj.dict())
     if hasattr(obj, 'model_dump'):
