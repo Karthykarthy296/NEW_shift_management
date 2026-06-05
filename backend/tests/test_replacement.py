@@ -9,7 +9,7 @@ import datetime
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, backend_dir)
 
-from app.database.database import SessionLocal, Employee, Leave, Schedule, Shift, Department, Overtime
+from app.database.database import SessionLocal, Employee, Leave, Schedule, Shift, Department, Overtime, WeeklyOffHistory
 from app.services import ai_scheduler
 
 def setup_test_data(db):
@@ -20,6 +20,7 @@ def setup_test_data(db):
     for eid in emp_ids:
         emp = db.query(Employee).filter(Employee.emp_id == eid).first()
         if emp:
+            db.query(WeeklyOffHistory).filter(WeeklyOffHistory.employee_id == emp.id).delete()
             db.query(Schedule).filter(Schedule.employee_id == emp.id).delete()
             db.query(Schedule).filter(Schedule.replaced_employee_id == emp.id).delete()
             db.query(Leave).filter(Leave.employee_id == emp.id).delete()

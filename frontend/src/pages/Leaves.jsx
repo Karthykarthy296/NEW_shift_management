@@ -45,6 +45,13 @@ export default function Leaves() {
   const [empSearchQuery, setEmpSearchQuery] = useState('');
   const [isEmpDropdownOpen, setIsEmpDropdownOpen] = useState(false);
 
+  // Replacement Panel States
+  const [replacementModalOpen, setReplacementModalOpen] = useState(false);
+  const [replacementLeaveEmp, setReplacementLeaveEmp] = useState(null); // { name, emp_id, date }
+  const [replacementCandidates, setReplacementCandidates] = useState([]);
+  const [selectedReplacementId, setSelectedReplacementId] = useState(null);
+  const [replacementLoading, setReplacementLoading] = useState(false);
+
   const navigate = useNavigate();
   const role = localStorage.getItem('role') || 'User';
 
@@ -258,9 +265,18 @@ export default function Leaves() {
       });
       
       setMsg(res.data.msg);
-      if (Array.isArray(res.data.replacements)) {
-        setReplacements(res.data.replacements);
+      
+      if (Array.isArray(res.data.candidates)) {
+        setReplacementLeaveEmp({ name: modalEmpName, emp_id: '', date: modalDate });
+        setReplacementCandidates(res.data.candidates);
+        if (res.data.candidates.length > 0) {
+          setSelectedReplacementId(res.data.candidates[0].id);
+        } else {
+          setSelectedReplacementId(null);
+        }
+        setReplacementModalOpen(true);
       }
+      
       setShowAddLeaveModal(false);
       setModalEmpName('');
       setEmpSearchQuery('');
@@ -269,6 +285,58 @@ export default function Leaves() {
       console.error(e);
       setMsg(e.response?.data?.detail || 'Error applying leave');
       setShowAddLeaveModal(false);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleOpenReplacementModal = async (empName, empId, date) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    setReplacementLeaveEmp({ name: empName, emp_id: empId, date });
+    setReplacementLoading(true);
+    setReplacementCandidates([]);
+    setSelectedReplacementId(null);
+    setReplacementModalOpen(true);
+    try {
+      const res = await axios.get(`${API_URL}/leaves/replacement-candidates?employee_name=${encodeURIComponent(empName)}&date=${date}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setReplacementCandidates(res.data || []);
+      if (res.data && res.data.length > 0) {
+        setSelectedReplacementId(res.data[0].id);
+      }
+    } catch (e) {
+      console.error(e);
+      setMsg('Error fetching replacement candidates.');
+    } finally {
+      setReplacementLoading(false);
+    }
+  };
+
+  const handleAssignReplacement = async () => {
+    if (!selectedReplacementId || !replacementLeaveEmp) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    setActionLoading(true);
+    setMsg('');
+    try {
+      const res = await axios.post(`${API_URL}/leaves/assign-replacement`, {
+        date: replacementLeaveEmp.date,
+        employee_name: replacementLeaveEmp.name,
+        replacement_id: selectedReplacementId
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setMsg(res.data.message || 'Replacement assigned successfully.');
+      setReplacementModalOpen(false);
+      setReplacementLeaveEmp(null);
+      setReplacementCandidates([]);
+      fetchScheduleAndLeaves();
+    } catch (e) {
+      console.error(e);
+      setMsg(e.response?.data?.detail || 'Error assigning replacement.');
     } finally {
       setActionLoading(false);
     }
@@ -500,36 +568,70 @@ export default function Leaves() {
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.5rem' }}>
-                      <span style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 600 }}>
-                        {emp.shiftStartEnd}
-                      </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 600 }}>
+                          {emp.shiftStartEnd}
+                        </span>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                        <button
+                          onClick={() => handleOpenReplacementModal(emp.name, emp.emp_id, targetDate)}
+                          disabled={actionLoading}
+                          style={{
+                            background: 'rgba(124, 58, 237, 0.08)',
+                            color: '#7c3aed',
+                            border: '1px solid rgba(124, 58, 237, 0.2)',
+                            padding: '0.4rem 0.8rem',
+                            borderRadius: '0.5rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            flex: 1,
+                            textAlign: 'center'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#7c3aed';
+                            e.currentTarget.style.color = '#ffffff';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(124, 58, 237, 0.08)';
+                            e.currentTarget.style.color = '#7c3aed';
+                          }}
+                        >
+                          Replacement
+                        </button>
 
-                      <button
-                        onClick={() => handleCancelLeave(emp.name)}
-                        disabled={actionLoading}
-                        style={{
-                          background: 'rgba(239, 68, 68, 0.08)',
-                          color: '#ef4444',
-                          border: '1px solid rgba(239, 68, 68, 0.2)',
-                          padding: '0.4rem 0.8rem',
-                          borderRadius: '0.5rem',
-                          fontSize: '0.75rem',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = '#ef4444';
-                          e.currentTarget.style.color = '#ffffff';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
-                          e.currentTarget.style.color = '#ef4444';
-                        }}
-                      >
-                        Cancel Leave
-                      </button>
+                        <button
+                          onClick={() => handleCancelLeave(emp.name)}
+                          disabled={actionLoading}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            color: '#ef4444',
+                            border: '1px solid rgba(239, 68, 68, 0.2)',
+                            padding: '0.4rem 0.8rem',
+                            borderRadius: '0.5rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            flex: 1,
+                            textAlign: 'center'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#ef4444';
+                            e.currentTarget.style.color = '#ffffff';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                            e.currentTarget.style.color = '#ef4444';
+                          }}
+                        >
+                          Cancel Leave
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -858,6 +960,136 @@ export default function Leaves() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Replacement Candidates Modal Popup */}
+      {replacementModalOpen && (
+        <div style={lightStyles.modalOverlay}>
+          <div style={{ ...lightStyles.modalContent, maxWidth: '540px' }}>
+            <button
+              onClick={() => {
+                setReplacementModalOpen(false);
+                setReplacementLeaveEmp(null);
+                setReplacementCandidates([]);
+              }}
+              style={{
+                position: 'absolute',
+                top: '1.25rem',
+                right: '1.25rem',
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer'
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <RefreshCw size={20} color="#7c3aed" style={{ animation: replacementLoading ? 'spin 1s linear infinite' : 'none' }} /> Replacement Candidates
+            </h3>
+            <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
+              Select a replacement candidate for <strong>{replacementLeaveEmp?.name}</strong> on <strong>{replacementLeaveEmp?.date}</strong>.
+            </p>
+
+            {replacementLoading ? (
+              <div style={{ textAlign: 'center', padding: '2rem' }}>
+                <RefreshCw size={24} style={{ animation: 'spin 1s linear infinite', color: '#7c3aed' }} />
+                <div style={{ marginTop: '0.5rem', color: '#64748b', fontSize: '0.85rem' }}>Finding eligible candidates...</div>
+              </div>
+            ) : replacementCandidates.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                No eligible replacement candidates found within constraints (e.g. limit hours, leave, or shifts).
+              </div>
+            ) : (
+              <div>
+                <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '1.5rem', border: '1px solid #e2e8f0', borderRadius: '0.75rem', padding: '0.5rem' }}>
+                  {replacementCandidates.map((cand) => (
+                    <div
+                      key={cand.id}
+                      onClick={() => setSelectedReplacementId(cand.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        padding: '0.75rem',
+                        borderRadius: '0.5rem',
+                        cursor: 'pointer',
+                        background: selectedReplacementId === cand.id ? '#f5f3ff' : 'transparent',
+                        border: selectedReplacementId === cand.id ? '1px solid #ddd6fe' : '1px solid transparent',
+                        transition: 'all 0.15s',
+                        marginBottom: '0.25rem'
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="replacementCandidate"
+                        checked={selectedReplacementId === cand.id}
+                        onChange={() => setSelectedReplacementId(cand.id)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>{cand.name}</span>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>({cand.role})</span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '2px' }}>
+                          Dept: {cand.department} | Weekly Workload: {cand.weekly_hours} hrs
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.25rem', marginTop: '4px', flexWrap: 'wrap' }}>
+                          {cand.is_weekly_off && (
+                            <span style={{ padding: '1px 5px', borderRadius: '4px', background: '#ecfdf5', color: '#10b981', fontSize: '0.65rem', fontWeight: 700 }}>
+                              Weekly Off Today
+                            </span>
+                          )}
+                          {cand.has_no_shift && (
+                            <span style={{ padding: '1px 5px', borderRadius: '4px', background: '#eff6ff', color: '#3b82f6', fontSize: '0.65rem', fontWeight: 700 }}>
+                              No Shift Assigned
+                            </span>
+                          )}
+                          {cand.same_dept && (
+                            <span style={{ padding: '1px 5px', borderRadius: '4px', background: '#f5f3ff', color: '#7c3aed', fontSize: '0.65rem', fontWeight: 700 }}>
+                              Same Dept
+                            </span>
+                          )}
+                          {cand.same_role && (
+                            <span style={{ padding: '1px 5px', borderRadius: '4px', background: '#fffbeb', color: '#d97706', fontSize: '0.65rem', fontWeight: 700 }}>
+                              Same Role
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                  <button
+                    onClick={() => {
+                      setReplacementModalOpen(false);
+                      setReplacementLeaveEmp(null);
+                      setReplacementCandidates([]);
+                    }}
+                    style={lightStyles.modalCancelBtn}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAssignReplacement}
+                    disabled={actionLoading || !selectedReplacementId}
+                    style={{
+                      ...lightStyles.modalSubmitBtn,
+                      opacity: (actionLoading || !selectedReplacementId) ? 0.6 : 1,
+                      cursor: (actionLoading || !selectedReplacementId) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {actionLoading ? 'Assigning...' : 'Assign Replacement'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

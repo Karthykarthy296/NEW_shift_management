@@ -32,16 +32,6 @@ class ActivityLoggingMiddleware(BaseHTTPMiddleware):
                 if payload:
                     username = payload.get("sub")
                     role = payload.get("role")
-                    
-                    db = SessionLocal()
-                    try:
-                        user = db.query(User).filter(User.username == username).first()
-                        if user:
-                            user_id = user.id
-                    except Exception:
-                        pass
-                    finally:
-                        db.close()
             except Exception:
                 pass
 

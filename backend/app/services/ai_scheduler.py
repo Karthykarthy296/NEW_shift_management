@@ -1,7 +1,7 @@
 import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.database.database import Employee, Shift, Schedule, Leave, Department, OvertimeLog, WeeklyOffHistory
+from app.database.database import Employee, Shift, Schedule, Leave, Department, OvertimeLog, WeeklyOffHistory, Overtime
 from datetime import date, timedelta
 import random
 from functools import lru_cache
@@ -19,7 +19,7 @@ def clear_schedule_cache():
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 import datetime
-from typing import Union
+from typing import Union, List, Dict, Any, Optional
 
 EPOCH_DATE = datetime.date(2026, 1, 5) # Monday
 
@@ -1255,6 +1255,175 @@ def find_best_replacement(db: Session, employee_id: int, target_date: str, shift
     if best_c:
         return best_c
     return _find_best_replacement_with_role_filter(db, employee_id, target_date, shift_id, exact_role_match=False)
+
+
+def get_replacement_candidates_list(db: Session, employee_id: int, target_date: str) -> List[Dict[str, Any]]:
+    """
+    Gets sorted list of all eligible replacement candidates with priority metrics.
+    Optimized for high performance (in-memory constraint verification).
+    """
+    orig_emp = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not orig_emp:
+        return []
+
+    # Find the shift that this employee is/was scheduled for on target_date
+    sched = db.query(Schedule).filter(
+        Schedule.employee_id == employee_id,
+        Schedule.date == target_date
+    ).first()
+    
+    if not sched:
+        # Check if they were replaced today, we might find their original schedule
+        sched = db.query(Schedule).filter(
+            Schedule.replaced_employee_id == employee_id,
+            Schedule.date == target_date
+        ).first()
+
+    if not sched:
+        # If still not found, we can try using their preferred shift as a fallback
+        preferred_shift_obj = db.query(Shift).filter(Shift.name == orig_emp.preferred_shift).first()
+        shift_id = preferred_shift_obj.id if preferred_shift_obj else 2  # Default to Morning
+    else:
+        shift_id = sched.shift_id
+
+    # Load target shift details
+    target_shift = db.query(Shift).filter(Shift.id == shift_id).first()
+    if not target_shift:
+        return []
+    
+    shift_duration = _shift_hours(target_shift.start_time, target_shift.end_time)
+
+    # Exclude those on leave today
+    leaves_today = db.query(Leave.employee_id).filter(Leave.date == target_date).all()
+    leave_ids = {l.employee_id for l in leaves_today}
+    leave_ids.add(employee_id)
+
+    import datetime
+    target_date_obj = datetime.date.fromisoformat(target_date)
+    day_name = target_date_obj.strftime('%A')
+    
+    iso_day = target_date_obj.isoweekday()
+    week_start = target_date_obj - datetime.timedelta(days=iso_day - 1)
+    week_end = week_start + datetime.timedelta(days=6)
+    week_start_str = week_start.isoformat()
+    week_end_str = week_end.isoformat()
+
+    # Pre-load all schedules for target_date to avoid N+1 query problem
+    schedules_today = db.query(Schedule).filter(Schedule.date == target_date).all()
+    sched_today_map = {}
+    for s in schedules_today:
+        sched_today_map.setdefault(s.employee_id, []).append(s)
+
+    # Pre-load all schedules for the week
+    schedules_week = db.query(Schedule).filter(
+        Schedule.date >= week_start_str,
+        Schedule.date <= week_end_str
+    ).all()
+    sched_week_map = {}
+    for s in schedules_week:
+        sched_week_map.setdefault(s.employee_id, []).append(s)
+
+    # Pre-load weekly overtime sums
+    overtimes_week = db.query(Overtime.employee_id, func.sum(Overtime.overtime_hours)).filter(
+        Overtime.overtime_date >= week_start_str,
+        Overtime.overtime_date <= week_end_str,
+        Overtime.status == "approved"
+    ).group_by(Overtime.employee_id).all()
+    ot_week_map = {emp_id: float(hrs or 0.0) for emp_id, hrs in overtimes_week}
+
+    overtime_logs_week = db.query(OvertimeLog.employee_id, func.sum(OvertimeLog.overtime_hours)).filter(
+        OvertimeLog.week_start_date == week_start_str,
+        OvertimeLog.status == "approved"
+    ).group_by(OvertimeLog.employee_id).all()
+    ot_log_week_map = {emp_id: float(hrs or 0.0) for emp_id, hrs in overtime_logs_week}
+
+    all_emps = db.query(Employee).all()
+    candidates = []
+
+    for c in all_emps:
+        if c.id == employee_id:
+            continue
+        if c.id in leave_ids or c.leave_status == "On Leave":
+            continue
+
+        # In-memory validation of constraints:
+        
+        # 1. Double shift check (not working another active/working shift today)
+        c_today = sched_today_map.get(c.id, [])
+        already_working = False
+        for s in c_today:
+            # If they are scheduled on a shift that is not "week off"
+            if s.shift and s.shift.name.lower().strip() != "week off":
+                already_working = True
+                break
+        if already_working:
+            continue
+
+        # 2. Already assigned emergency replacement today
+        already_emergency = False
+        for s in c_today:
+            if s.is_override or s.replaced_employee_id is not None:
+                already_emergency = True
+                break
+        if already_emergency:
+            continue
+
+        # 3. Max weekly hours check (including the proposed shift)
+        c_week = sched_week_map.get(c.id, [])
+        week_worked_hours = 0
+        for s in c_week:
+            if s.shift and s.shift.name.lower().strip() != "week off":
+                week_worked_hours += _shift_hours(s.shift.start_time, s.shift.end_time)
+
+        approved_ot = ot_week_map.get(c.id, 0.0)
+        approved_ot_log = ot_log_week_map.get(c.id, 0.0)
+        total_week_hours = week_worked_hours + approved_ot + approved_ot_log
+        limit = c.max_hours if c.max_hours else 40
+
+        if total_week_hours + shift_duration > limit:
+            continue
+
+        # Priority 1: Weekly Off
+        rotated_off_day = get_rotated_weekly_off(c.weekly_off, target_date_obj)
+        is_weekly_off = (day_name.lower() == rotated_off_day.lower())
+        
+        # Priority 2: No shift assigned today
+        has_no_shift = (len(c_today) == 0) or all(s.shift.name.lower().strip() == "week off" for s in c_today if s.shift)
+        
+        # Priority 4: Same department
+        same_dept = (c.department_id == orig_emp.department_id) if orig_emp.department_id is not None else False
+        
+        # Priority 5: Same role
+        same_role = (c.role.lower().strip() == orig_emp.role.lower().strip()) if (c.role and orig_emp.role) else False
+
+        candidates.append({
+            "id": c.id,
+            "emp_id": c.emp_id,
+            "name": c.name,
+            "role": c.role or "Staff",
+            "department": c.department.name if c.department else "None",
+            "is_weekly_off": is_weekly_off,
+            "has_no_shift": has_no_shift,
+            "weekly_hours": total_week_hours,
+            "same_dept": same_dept,
+            "same_role": same_role
+        })
+
+    # Sort based on priority order:
+    # 1. Weekly Off employee (is_weekly_off=True first)
+    # 2. Employee with no shift on that day (has_no_shift=True first)
+    # 3. Same department employee (same_dept=True first)
+    # 4. Same role employee (same_role=True first)
+    # 5. Employee with least workload (weekly_hours ascending)
+    candidates.sort(key=lambda c: (
+        0 if c["is_weekly_off"] else 1,
+        0 if c["has_no_shift"] else 1,
+        0 if c["same_dept"] else 1,
+        0 if c["same_role"] else 1,
+        c["weekly_hours"]
+    ))
+
+    return candidates
 
 
 def reassign_shift(db: Session, leave_employee_id: int, leave_date: str):

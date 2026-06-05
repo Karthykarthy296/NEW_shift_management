@@ -1,7 +1,7 @@
 # Employee Weekoff Management System
 
 ## Overview
-A comprehensive Weekoff Management System built with Python, Flask, and MySQL.
+A comprehensive Weekoff Management System built with Python, FastAPI, and MySQL.
 
 ## Features
 - **Employee CRUD:** Add, View, Delete employees.
